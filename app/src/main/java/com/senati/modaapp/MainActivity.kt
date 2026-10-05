@@ -9,6 +9,7 @@ import com.senati.modaapp.databinding.ActivityMainBinding
 class MainActivity : AppCompatActivity() {
 
     private lateinit var binding: ActivityMainBinding
+    private lateinit var usuarioDao: UsuarioDao
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -16,14 +17,15 @@ class MainActivity : AppCompatActivity() {
         binding = ActivityMainBinding.inflate(layoutInflater)
         setContentView(binding.root)
 
-        // Botón Ingresar como Administrador (HU-01, CA1, CA2, CA3)
+        usuarioDao = UsuarioDao(this)
+
+        // Botón Ingresar como Administrador (HU-04, CA2, CA3)
         binding.btnIngresarAdmin.setOnClickListener {
             val usuarioInput = binding.etUsuario.text.toString().trim()
             val claveInput = binding.etClave.text.toString().trim()
 
             var isValid = true
 
-            // Validar si el campo usuario está vacío (CA1)
             if (usuarioInput.isEmpty()) {
                 binding.etUsuario.error = getString(R.string.error_campo_vacio)
                 isValid = false
@@ -31,7 +33,6 @@ class MainActivity : AppCompatActivity() {
                 binding.etUsuario.error = null
             }
 
-            // Validar si el campo contraseña está vacío (CA1)
             if (claveInput.isEmpty()) {
                 binding.etClave.error = getString(R.string.error_campo_vacio)
                 isValid = false
@@ -40,14 +41,17 @@ class MainActivity : AppCompatActivity() {
             }
 
             if (isValid) {
-                // Validación para el Sprint 1: admin / 1234 (CA2)
-                if (usuarioInput == "admin" && claveInput == "1234") {
+                // Validación real consultando la tabla usuario de modaapp.db (HU-04)
+                val usuarioLogueado = usuarioDao.validarUsuario(usuarioInput, claveInput)
+
+                if (usuarioLogueado != null) {
+                    Toast.makeText(this, "Bienvenido ${usuarioLogueado.usuario}", Toast.LENGTH_SHORT).show()
                     val intent = Intent(this, MenuActivity::class.java).apply {
-                        putExtra("EXTRA_USUARIO", "admin")
-                        putExtra("EXTRA_ROL", "ADMIN")
+                        putExtra("EXTRA_USUARIO", usuarioLogueado.usuario)
+                        putExtra("EXTRA_ROL", usuarioLogueado.rol)
                     }
                     startActivity(intent)
-                    finish() // Cierra el login para que la tecla 'atrás' no regrese aquí (CA2)
+                    finish()
                 } else {
                     // Credenciales incorrectas (CA3)
                     Toast.makeText(this, getString(R.string.error_credenciales), Toast.LENGTH_SHORT).show()

@@ -29,6 +29,12 @@
             android:exported="false"
             android:windowSoftInputMode="adjustResize" />
 
+        <!-- Formulario para Registrar Ropa -->
+        <activity
+            android:name=".RegistrarRopaActivity"
+            android:exported="false"
+            android:windowSoftInputMode="adjustResize" />
+
         <!-- Catálogo del Cliente -->
         <activity
             android:name=".CatalogoActivity"
