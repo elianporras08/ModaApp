@@ -1,0 +1,65 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    xmlns:tools="http://schemas.android.com/tools"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:orientation="vertical"
+    android:padding="20dp"
+    android:background="@color/fondo_gris"
+    tools:context=".CarritoActivity">
+
+    <TextView
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="@string/titulo_carrito"
+        android:textSize="22sp"
+        android:textStyle="bold"
+        android:textColor="@color/black"
+        android:layout_marginBottom="16dp" />
+
+    <!-- Lista de prendas en el carrito -->
+    <androidx.recyclerview.widget.RecyclerView
+        android:id="@+id/recyclerCarrito"
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1"
+        android:layout_marginBottom="16dp" />
+
+    <!-- Sección de Total -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:layout_marginBottom="20dp">
+
+        <TextView
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:text="Total"
+            android:textSize="18sp"
+            android:textStyle="bold"
+            android:textColor="@color/black" />
+
+        <TextView
+            android:id="@+id/tvTotalCarrito"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="S/ 0.00"
+            android:textSize="22sp"
+            android:textStyle="bold"
+            android:textColor="@color/rosa_moda" />
+    </LinearLayout>
+
+    <!-- Botón Hacer Pedido -->
+    <com.google.android.material.button.MaterialButton
+        android:id="@+id/btnHacerPedido"
+        android:layout_width="match_parent"
+        android:layout_height="55dp"
+        android:text="Hacer pedido"
+        android:textSize="15sp"
+        app:backgroundTint="@color/rosa_moda"
+        app:cornerRadius="28dp" />
+
+</LinearLayout>

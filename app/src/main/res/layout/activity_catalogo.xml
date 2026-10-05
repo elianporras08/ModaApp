@@ -1,0 +1,94 @@
+<?xml version="1.0" encoding="utf-8"?>
+<androidx.coordinatorlayout.widget.CoordinatorLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    xmlns:tools="http://schemas.android.com/tools"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="@color/fondo_gris"
+    tools:context=".CatalogoActivity">
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:orientation="vertical"
+        android:padding="16dp">
+
+        <!-- Encabezado con Botón del Carrito -->
+        <RelativeLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginBottom="16dp">
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="@string/titulo_catalogo"
+                android:textSize="22sp"
+                android:textStyle="bold"
+                android:textColor="@color/black" />
+
+            <!-- Botón de Carrito (Prototipo P2-04) -->
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/btnVerCarrito"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_alignParentEnd="true"
+                android:text="Carrito"
+                android:textSize="13sp"
+                app:backgroundTint="@color/rosa_moda"
+                app:cornerRadius="20dp" />
+        </RelativeLayout>
+
+        <!-- Filtros por Categoría (Prototipo P2-04) -->
+        <HorizontalScrollView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:scrollbars="none"
+            android:layout_marginBottom="16dp">
+
+            <com.google.android.material.chip.ChipGroup
+                android:id="@+id/chipGroupCategorias"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                app:singleSelection="true"
+                app:selectionRequired="true">
+
+                <com.google.android.material.chip.Chip
+                    android:id="@+id/chipTodas"
+                    style="@style/Widget.MaterialComponents.Chip.Choice"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:checked="true"
+                    android:text="Todas" />
+
+                <com.google.android.material.chip.Chip
+                    android:id="@+id/chipPolos"
+                    style="@style/Widget.MaterialComponents.Chip.Choice"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="Polos" />
+
+                <com.google.android.material.chip.Chip
+                    android:id="@+id/chipPantalones"
+                    style="@style/Widget.MaterialComponents.Chip.Choice"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="Pantalones" />
+
+                <com.google.android.material.chip.Chip
+                    android:id="@+id/chipVestidos"
+                    style="@style/Widget.MaterialComponents.Chip.Choice"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="Vestidos" />
+            </com.google.android.material.chip.ChipGroup>
+        </HorizontalScrollView>
+
+        <!-- Grilla de prendas en el catálogo -->
+        <androidx.recyclerview.widget.RecyclerView
+            android:id="@+id/recyclerCatalogo"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent" />
+    </LinearLayout>
+
+</androidx.coordinatorlayout.widget.CoordinatorLayout>

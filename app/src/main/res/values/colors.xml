@@ -2,4 +2,11 @@
 <resources>
     <color name="black">#FF000000</color>
     <color name="white">#FFFFFFFF</color>
+
+    <!-- Identidad visual Boutique Moda Urbana (HU-03) -->
+    <color name="rosa_moda">#C2185B</color>
+    <color name="rosa_oscuro">#880E4F</color>
+    <color name="rosa_claro">#F8BBD0</color>
+    <color name="negro_moda">#212121</color>
+    <color name="fondo_gris">#F5F5F5</color>
 </resources>

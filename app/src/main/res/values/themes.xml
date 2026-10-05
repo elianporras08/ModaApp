@@ -1,8 +1,12 @@
 <resources xmlns:tools="http://schemas.android.com/tools">
-    <!-- Base application theme. -->
+    <!-- Tema base de ModaApp usando Material3 sin ActionBar -->
     <style name="Base.Theme.ModaApp" parent="Theme.Material3.DayNight.NoActionBar">
-        <!-- Customize your light theme here. -->
-        <!-- <item name="colorPrimary">@color/my_light_primary</item> -->
+        <!-- Color principal de la marca (Rosa) -->
+        <item name="colorPrimary">@color/rosa_moda</item>
+        <item name="colorOnPrimary">@color/white</item>
+
+        <!-- Color de la barra de estado superior -->
+        <item name="android:statusBarColor">@color/rosa_oscuro</item>
     </style>
 
     <style name="Theme.ModaApp" parent="Base.Theme.ModaApp" />

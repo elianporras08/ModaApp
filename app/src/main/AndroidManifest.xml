@@ -11,16 +11,36 @@
         android:roundIcon="@mipmap/ic_launcher_round"
         android:supportsRtl="true"
         android:theme="@style/Theme.ModaApp">
+
+        <!-- Pantalla Principal de Login -->
         <activity
             android:name=".MainActivity"
             android:exported="true"
             android:windowSoftInputMode="adjustResize">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
-
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
+
+        <!-- Menú del Administrador -->
+        <activity
+            android:name=".MenuActivity"
+            android:exported="false"
+            android:windowSoftInputMode="adjustResize" />
+
+        <!-- Catálogo del Cliente -->
+        <activity
+            android:name=".CatalogoActivity"
+            android:exported="false"
+            android:windowSoftInputMode="adjustResize" />
+
+        <!-- Carrito del Cliente -->
+        <activity
+            android:name=".CarritoActivity"
+            android:exported="false"
+            android:windowSoftInputMode="adjustResize" />
+
     </application>
 
 </manifest>

@@ -1,3 +1,28 @@
+<?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="app_name">ModaApp</string>
+
+    <!-- Textos para el Login y Acceso (HU-01) -->
+    <string name="subtitle_login">Boutique Moda Urbana</string>
+    <string name="hint_usuario">Usuario</string>
+    <string name="hint_contrasena">Contraseña</string>
+    <string name="btn_ingresar_admin">Ingresar como administrador</string>
+    <string name="btn_ver_catalogo">Ver catálogo (cliente)</string>
+    <string name="txt_prueba_admin">Prueba: admin / 1234</string>
+
+    <!-- Mensajes de error (HU-01) -->
+    <string name="error_campo_vacio">Campo requerido</string>
+    <string name="error_credenciales">Credenciales incorrectas</string>
+
+    <!-- Menú del Administrador (HU-02) -->
+    <string name="titulo_bienvenida">Hola, %1$s</string>
+    <string name="btn_ropa">Ropa</string>
+    <string name="btn_pedidos">Pedidos</string>
+    <string name="btn_clientes">Clientes</string>
+    <string name="btn_reportes">Reportes</string>
+    <string name="btn_salir">Salir</string>
+
+    <!-- Catálogo y Carrito (HU-02) -->
+    <string name="titulo_catalogo">Catálogo</string>
+    <string name="titulo_carrito">Mi carrito</string>
 </resources>
