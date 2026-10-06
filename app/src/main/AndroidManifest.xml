@@ -29,6 +29,12 @@
             android:exported="false"
             android:windowSoftInputMode="adjustResize" />
 
+        <!-- Gestión e Inventario de Ropa (HU-07) -->
+        <activity
+            android:name=".GestionRopaActivity"
+            android:exported="false"
+            android:windowSoftInputMode="adjustResize" />
+
         <!-- Formulario para Registrar Ropa -->
         <activity
             android:name=".RegistrarRopaActivity"

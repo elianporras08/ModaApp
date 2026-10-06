@@ -2,12 +2,11 @@ package com.senati.modaapp
 
 import android.content.ContentValues
 import android.content.Context
-import android.database.Cursor
 
 class RopaDao(context: Context) {
+
     private val dbHelper = DBHelper(context)
 
-    // Insertar una prenda en la base de datos (HU-05)
     fun insertar(ropa: Ropa): Boolean {
         val db = dbHelper.writableDatabase
         val values = ContentValues().apply {
@@ -20,22 +19,24 @@ class RopaDao(context: Context) {
             put("cantidad", ropa.cantidad)
             put("foto", ropa.foto)
         }
-        val resultado = db.insert("ropa", null, values)
+        val id = db.insert("ropa", null, values)
         db.close()
-        return resultado != -1L
+        return id != -1L
     }
 
-    // Listar las categorías para los Spinners y Chips (HU-05, HU-06)
     fun listarCategorias(): List<Categoria> {
         val lista = mutableListOf<Categoria>()
         val db = dbHelper.readableDatabase
-        val cursor: Cursor = db.rawQuery("SELECT * FROM categoria ORDER BY nombre", null)
+        val cursor = db.rawQuery("SELECT * FROM categoria", null)
 
         if (cursor.moveToFirst()) {
             do {
-                val id = cursor.getInt(cursor.getColumnIndexOrThrow("id"))
-                val nombre = cursor.getString(cursor.getColumnIndexOrThrow("nombre"))
-                lista.add(Categoria(id, nombre))
+                lista.add(
+                    Categoria(
+                        id = cursor.getInt(cursor.getColumnIndexOrThrow("id")),
+                        nombre = cursor.getString(cursor.getColumnIndexOrThrow("nombre"))
+                    )
+                )
             } while (cursor.moveToNext())
         }
         cursor.close()
@@ -43,43 +44,31 @@ class RopaDao(context: Context) {
         return lista
     }
 
-    // Listar prendas disponibles (cantidad > 0) para el catálogo del cliente (HU-06)
     fun listarDisponibles(idCategoria: Int = 0): List<Ropa> {
         val lista = mutableListOf<Ropa>()
         val db = dbHelper.readableDatabase
-
-        var query = """
-            SELECT r.*, c.nombre AS categoria_nombre 
-            FROM ropa r 
-            INNER JOIN categoria c ON r.id_categoria = c.id 
-            WHERE r.cantidad > 0
-        """.trimIndent()
-
-        val params = mutableListOf<String>()
-
-        if (idCategoria > 0) {
-            query += " AND r.id_categoria = ?"
-            params.add(idCategoria.toString())
+        val query = if (idCategoria > 0) {
+            "SELECT * FROM ropa WHERE id_categoria = $idCategoria AND cantidad > 0"
+        } else {
+            "SELECT * FROM ropa WHERE cantidad > 0"
         }
 
-        query += " ORDER BY r.id DESC"
-
-        val cursor: Cursor = db.rawQuery(query, if (params.isNotEmpty()) params.toTypedArray() else null)
-
+        val cursor = db.rawQuery(query, null)
         if (cursor.moveToFirst()) {
             do {
-                val id = cursor.getInt(cursor.getColumnIndexOrThrow("id"))
-                val modelo = cursor.getString(cursor.getColumnIndexOrThrow("modelo"))
-                val idCat = cursor.getInt(cursor.getColumnIndexOrThrow("id_categoria"))
-                val catNombre = cursor.getString(cursor.getColumnIndexOrThrow("categoria_nombre"))
-                val talla = cursor.getString(cursor.getColumnIndexOrThrow("talla"))
-                val marca = cursor.getString(cursor.getColumnIndexOrThrow("marca"))
-                val color = cursor.getString(cursor.getColumnIndexOrThrow("color"))
-                val precio = cursor.getDouble(cursor.getColumnIndexOrThrow("precio"))
-                val cantidad = cursor.getInt(cursor.getColumnIndexOrThrow("cantidad"))
-                val foto = cursor.getString(cursor.getColumnIndexOrThrow("foto"))
-
-                lista.add(Ropa(id, modelo, idCat, catNombre, talla, marca, color, precio, cantidad, foto))
+                lista.add(
+                    Ropa(
+                        id = cursor.getInt(cursor.getColumnIndexOrThrow("id")),
+                        modelo = cursor.getString(cursor.getColumnIndexOrThrow("modelo")),
+                        idCategoria = cursor.getInt(cursor.getColumnIndexOrThrow("id_categoria")),
+                        talla = cursor.getString(cursor.getColumnIndexOrThrow("talla")),
+                        marca = cursor.getString(cursor.getColumnIndexOrThrow("marca")),
+                        color = cursor.getString(cursor.getColumnIndexOrThrow("color")),
+                        precio = cursor.getDouble(cursor.getColumnIndexOrThrow("precio")),
+                        cantidad = cursor.getInt(cursor.getColumnIndexOrThrow("cantidad")),
+                        foto = cursor.getString(cursor.getColumnIndexOrThrow("foto"))
+                    )
+                )
             } while (cursor.moveToNext())
         }
         cursor.close()
@@ -87,37 +76,82 @@ class RopaDao(context: Context) {
         return lista
     }
 
-    // Listar todas las prendas registradas para la lista del administrador (HU-05)
-    fun listarTodas(): List<Ropa> {
+    // Buscar ropa por modelo o marca (HU-07)
+    fun buscarRopa(texto: String): List<Ropa> {
         val lista = mutableListOf<Ropa>()
         val db = dbHelper.readableDatabase
-        val query = """
-            SELECT r.*, c.nombre AS categoria_nombre 
-            FROM ropa r 
-            INNER JOIN categoria c ON r.id_categoria = c.id 
-            ORDER BY r.id DESC
-        """.trimIndent()
-
-        val cursor: Cursor = db.rawQuery(query, null)
+        val cursor = db.rawQuery(
+            "SELECT * FROM ropa WHERE modelo LIKE '%$texto%' OR marca LIKE '%$texto%'", null
+        )
 
         if (cursor.moveToFirst()) {
             do {
-                val id = cursor.getInt(cursor.getColumnIndexOrThrow("id"))
-                val modelo = cursor.getString(cursor.getColumnIndexOrThrow("modelo"))
-                val idCat = cursor.getInt(cursor.getColumnIndexOrThrow("id_categoria"))
-                val catNombre = cursor.getString(cursor.getColumnIndexOrThrow("categoria_nombre"))
-                val talla = cursor.getString(cursor.getColumnIndexOrThrow("talla"))
-                val marca = cursor.getString(cursor.getColumnIndexOrThrow("marca"))
-                val color = cursor.getString(cursor.getColumnIndexOrThrow("color"))
-                val precio = cursor.getDouble(cursor.getColumnIndexOrThrow("precio"))
-                val cantidad = cursor.getInt(cursor.getColumnIndexOrThrow("cantidad"))
-                val foto = cursor.getString(cursor.getColumnIndexOrThrow("foto"))
-
-                lista.add(Ropa(id, modelo, idCat, catNombre, talla, marca, color, precio, cantidad, foto))
+                lista.add(
+                    Ropa(
+                        id = cursor.getInt(cursor.getColumnIndexOrThrow("id")),
+                        modelo = cursor.getString(cursor.getColumnIndexOrThrow("modelo")),
+                        idCategoria = cursor.getInt(cursor.getColumnIndexOrThrow("id_categoria")),
+                        talla = cursor.getString(cursor.getColumnIndexOrThrow("talla")),
+                        marca = cursor.getString(cursor.getColumnIndexOrThrow("marca")),
+                        color = cursor.getString(cursor.getColumnIndexOrThrow("color")),
+                        precio = cursor.getDouble(cursor.getColumnIndexOrThrow("precio")),
+                        cantidad = cursor.getInt(cursor.getColumnIndexOrThrow("cantidad")),
+                        foto = cursor.getString(cursor.getColumnIndexOrThrow("foto"))
+                    )
+                )
             } while (cursor.moveToNext())
         }
         cursor.close()
         db.close()
         return lista
+    }
+
+    // Obtener prenda específica por ID para edición (HU-07)
+    fun obtenerPorId(id: Int): Ropa? {
+        val db = dbHelper.readableDatabase
+        val cursor = db.rawQuery("SELECT * FROM ropa WHERE id = ?", arrayOf(id.toString()))
+        var ropa: Ropa? = null
+        if (cursor.moveToFirst()) {
+            ropa = Ropa(
+                id = cursor.getInt(cursor.getColumnIndexOrThrow("id")),
+                modelo = cursor.getString(cursor.getColumnIndexOrThrow("modelo")),
+                idCategoria = cursor.getInt(cursor.getColumnIndexOrThrow("id_categoria")),
+                talla = cursor.getString(cursor.getColumnIndexOrThrow("talla")),
+                marca = cursor.getString(cursor.getColumnIndexOrThrow("marca")),
+                color = cursor.getString(cursor.getColumnIndexOrThrow("color")),
+                precio = cursor.getDouble(cursor.getColumnIndexOrThrow("precio")),
+                cantidad = cursor.getInt(cursor.getColumnIndexOrThrow("cantidad")),
+                foto = cursor.getString(cursor.getColumnIndexOrThrow("foto"))
+            )
+        }
+        cursor.close()
+        db.close()
+        return ropa
+    }
+
+    // Actualizar prenda existente (HU-07)
+    fun actualizar(ropa: Ropa): Boolean {
+        val db = dbHelper.writableDatabase
+        val values = ContentValues().apply {
+            put("modelo", ropa.modelo)
+            put("id_categoria", ropa.idCategoria)
+            put("talla", ropa.talla)
+            put("marca", ropa.marca)
+            put("color", ropa.color)
+            put("precio", ropa.precio)
+            put("cantidad", ropa.cantidad)
+            put("foto", ropa.foto)
+        }
+        val filasAfectadas = db.update("ropa", values, "id = ?", arrayOf(ropa.id.toString()))
+        db.close()
+        return filasAfectadas > 0
+    }
+
+    // Eliminar prenda (HU-07)
+    fun eliminar(id: Int): Boolean {
+        val db = dbHelper.writableDatabase
+        val filasAfectadas = db.delete("ropa", "id = ?", arrayOf(id.toString()))
+        db.close()
+        return filasAfectadas > 0
     }
 }

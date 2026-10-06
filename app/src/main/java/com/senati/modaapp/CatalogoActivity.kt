@@ -34,15 +34,15 @@ class CatalogoActivity : AppCompatActivity() {
 
     override fun onResume() {
         super.onResume()
-        // Recargar el catálogo cada vez que el usuario vuelve a la pantalla
         cargarPrendas(0)
     }
 
     private fun configurarRecyclerView() {
-        // Formato en cuadrícula de 2 columnas (Prototipo P2-04)
         binding.recyclerCatalogo.layoutManager = GridLayoutManager(this, 2)
 
         adapter = RopaAdapter(emptyList()) { prenda ->
+            // Agregar el producto seleccionado al CarritoManager (HU-08)
+            CarritoManager.agregarProducto(prenda)
             Toast.makeText(this, "${prenda.modelo} añadido al carrito", Toast.LENGTH_SHORT).show()
         }
         binding.recyclerCatalogo.adapter = adapter
@@ -51,7 +51,6 @@ class CatalogoActivity : AppCompatActivity() {
     private fun configurarFiltros() {
         listaCategorias = ropaDao.listarCategorias()
 
-        // Evento para filtrar por categoría al presionar un Chip (HU-06)
         binding.chipGroupCategorias.setOnCheckedStateChangeListener { _, checkedIds ->
             if (checkedIds.isEmpty()) return@setOnCheckedStateChangeListener
 
@@ -60,7 +59,7 @@ class CatalogoActivity : AppCompatActivity() {
                 R.id.chipPolos -> obtenerIdCategoria("Polos")
                 R.id.chipPantalones -> obtenerIdCategoria("Pantalones")
                 R.id.chipVestidos -> obtenerIdCategoria("Vestidos")
-                else -> 0 // 0 representa 'Todas'
+                else -> 0
             }
 
             cargarPrendas(idCategoria)

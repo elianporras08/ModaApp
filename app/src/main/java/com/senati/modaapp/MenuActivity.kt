@@ -18,9 +18,9 @@ class MenuActivity : AppCompatActivity() {
         val usuario = intent.getStringExtra("EXTRA_USUARIO") ?: "admin"
         binding.tvBienvenida.text = "Hola, $usuario"
 
-        // Abrir formulario para registrar prenda (HU-05)
+        // Abrir la gestión e inventario de ropa (HU-07)
         binding.cardRopa.setOnClickListener {
-            val intent = Intent(this, RegistrarRopaActivity::class.java)
+            val intent = Intent(this, GestionRopaActivity::class.java)
             startActivity(intent)
         }
 

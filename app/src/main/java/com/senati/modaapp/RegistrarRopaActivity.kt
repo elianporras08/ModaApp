@@ -14,13 +14,12 @@ class RegistrarRopaActivity : AppCompatActivity() {
     private lateinit var ropaDao: RopaDao
     private var listaCategorias: List<Categoria> = emptyList()
     private var fotoUriSeleccionada: String = ""
+    private var idRopaEditar: Int = -1
 
-    // Launcher para abrir la galería del dispositivo (HU-05)
     private val seleccionarFotoLauncher = registerForActivityResult(
         ActivityResultContracts.GetContent()
     ) { uri: Uri? ->
         if (uri != null) {
-            // Intentar persistir permisos de lectura para la URI seleccionada
             try {
                 contentResolver.takePersistableUriPermission(
                     uri,
@@ -42,21 +41,25 @@ class RegistrarRopaActivity : AppCompatActivity() {
 
         ropaDao = RopaDao(this)
 
+        // Capturar si viene un ID para modo edición (HU-07)
+        idRopaEditar = intent.getIntExtra("EXTRA_ROPA_ID", -1)
+
         configurarSpinners()
 
-        // Seleccionar foto de la galería
+        if (idRopaEditar != -1) {
+            cargarDatosEdicion()
+        }
+
         binding.btnSeleccionarFoto.setOnClickListener {
             seleccionarFotoLauncher.launch("image/*")
         }
 
-        // Guardar la prenda
         binding.btnGuardarRopa.setOnClickListener {
-            guardarPrenda()
+            guardarOActualizarPrenda()
         }
     }
 
     private fun configurarSpinners() {
-        // Cargar Categorías desde SQLite (HU-05)
         listaCategorias = ropaDao.listarCategorias()
         val nombresCategorias = listaCategorias.map { it.nombre }
         val adapterCategoria = ArrayAdapter(
@@ -66,7 +69,6 @@ class RegistrarRopaActivity : AppCompatActivity() {
         )
         binding.spCategoria.adapter = adapterCategoria
 
-        // Cargar Tallas predefinidas
         val tallas = listOf("S", "M", "L", "XL", "28", "30", "32", "34", "36", "38", "40", "ESTÁNDAR")
         val adapterTalla = ArrayAdapter(
             this,
@@ -76,7 +78,38 @@ class RegistrarRopaActivity : AppCompatActivity() {
         binding.spTalla.adapter = adapterTalla
     }
 
-    private fun guardarPrenda() {
+    private fun cargarDatosEdicion() {
+        val ropa = ropaDao.obtenerPorId(idRopaEditar) ?: return
+
+        binding.tvTituloRegistrar.text = "Editar prenda"
+        binding.btnGuardarRopa.text = "Actualizar"
+
+        binding.etModelo.setText(ropa.modelo)
+        binding.etMarca.setText(ropa.marca)
+        binding.etColor.setText(ropa.color)
+        binding.etCantidad.setText(ropa.cantidad.toString())
+        binding.etPrecio.setText(ropa.precio.toString())
+
+        fotoUriSeleccionada = ropa.foto
+        if (ropa.foto.isNotEmpty()) {
+            try {
+                binding.ivFotoPrenda.setImageURI(Uri.parse(ropa.foto))
+            } catch (e: Exception) {
+                binding.ivFotoPrenda.setImageResource(android.R.drawable.ic_menu_gallery)
+            }
+        }
+
+        // Posicionar spinner categoría
+        val posCat = listaCategorias.indexOfFirst { it.id == ropa.idCategoria }
+        if (posCat != -1) binding.spCategoria.setSelection(posCat)
+
+        // Posicionar spinner talla
+        val tallas = listOf("S", "M", "L", "XL", "28", "30", "32", "34", "36", "38", "40", "ESTÁNDAR")
+        val posTalla = tallas.indexOf(ropa.talla)
+        if (posTalla != -1) binding.spTalla.setSelection(posTalla)
+    }
+
+    private fun guardarOActualizarPrenda() {
         val modelo = binding.etModelo.text.toString().trim()
         val marca = binding.etMarca.text.toString().trim()
         val color = binding.etColor.text.toString().trim()
@@ -92,7 +125,7 @@ class RegistrarRopaActivity : AppCompatActivity() {
         val precio = precioStr.toDoubleOrNull() ?: 0.0
 
         if (precio <= 0) {
-            binding.etPrecio.error = "Ingresa un precio válido mayores a S/ 0"
+            binding.etPrecio.error = "Ingresa un precio válido mayor a S/ 0"
             return
         }
 
@@ -100,7 +133,8 @@ class RegistrarRopaActivity : AppCompatActivity() {
         val idCategoria = if (listaCategorias.isNotEmpty()) listaCategorias[posicionCat].id else 1
         val tallaSeleccionada = binding.spTalla.selectedItem.toString()
 
-        val nuevaRopa = Ropa(
+        val ropaObjeto = Ropa(
+            id = if (idRopaEditar != -1) idRopaEditar else 0,
             modelo = modelo,
             idCategoria = idCategoria,
             talla = tallaSeleccionada,
@@ -111,13 +145,18 @@ class RegistrarRopaActivity : AppCompatActivity() {
             foto = fotoUriSeleccionada
         )
 
-        val insertado = ropaDao.insertar(nuevaRopa)
+        val exito = if (idRopaEditar != -1) {
+            ropaDao.actualizar(ropaObjeto)
+        } else {
+            ropaDao.insertar(ropaObjeto)
+        }
 
-        if (insertado) {
-            Toast.makeText(this, "Prenda registrada correctamente", Toast.LENGTH_SHORT).show()
+        if (exito) {
+            val msj = if (idRopaEditar != -1) "Prenda actualizada correctamente" else "Prenda registrada correctamente"
+            Toast.makeText(this, msj, Toast.LENGTH_SHORT).show()
             finish()
         } else {
-            Toast.makeText(this, "Error al registrar la prenda", Toast.LENGTH_SHORT).show()
+            Toast.makeText(this, "Error al procesar la prenda", Toast.LENGTH_SHORT).show()
         }
     }
 }

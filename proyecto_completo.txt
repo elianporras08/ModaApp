@@ -24,22 +24,1026 @@ class ExampleInstrumentedTest {
 }
 package com.senati.modaapp
 
+import android.content.Intent
+import android.net.Uri
 import android.os.Bundle
-import androidx.activity.enableEdgeToEdge
+import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
-import androidx.core.view.ViewCompat
-import androidx.core.view.WindowInsetsCompat
+import androidx.recyclerview.widget.LinearLayoutManager
+import com.senati.modaapp.databinding.ActivityCarritoBinding
+import java.net.URLEncoder
 
-class MainActivity : AppCompatActivity() {
+class CarritoActivity : AppCompatActivity() {
+
+    private lateinit var binding: ActivityCarritoBinding
+    private lateinit var adapter: CarritoAdapter
+    private lateinit var pedidoDao: PedidoDao
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        enableEdgeToEdge()
-        setContentView(R.layout.activity_main)
-        ViewCompat.setOnApplyWindowInsetsListener(findViewById(R.id.main)) { v, insets ->
-            val systemBars = insets.getInsets(WindowInsetsCompat.Type.systemBars())
-            v.setPadding(systemBars.left, systemBars.top, systemBars.right, systemBars.bottom)
-            insets
+
+        binding = ActivityCarritoBinding.inflate(layoutInflater)
+        setContentView(binding.root)
+
+        pedidoDao = PedidoDao(this)
+
+        configurarRecyclerView()
+        actualizarResumen()
+
+        // BotÃ³n Hacer pedido (HU-09 / HU-10)
+        binding.btnHacerPedido.setOnClickListener {
+            procesarPedido()
         }
+    }
+
+    override fun onResume() {
+        super.onResume()
+        adapter.actualizarLista(CarritoManager.obtenerItems())
+        actualizarResumen()
+    }
+
+    private fun configurarRecyclerView() {
+        binding.recyclerCarrito.layoutManager = LinearLayoutManager(this)
+
+        adapter = CarritoAdapter(CarritoManager.obtenerItems()) { posicion ->
+            CarritoManager.eliminarItem(posicion)
+            adapter.actualizarLista(CarritoManager.obtenerItems())
+            actualizarResumen()
+            Toast.makeText(this, "Producto eliminado del carrito", Toast.LENGTH_SHORT).show()
+        }
+        binding.recyclerCarrito.adapter = adapter
+    }
+
+    private fun actualizarResumen() {
+        val total = CarritoManager.obtenerTotal()
+        binding.tvTotalCarrito.text = String.format("S/ %.2f", total)
+    }
+
+    private fun procesarPedido() {
+        val items = CarritoManager.obtenerItems()
+
+        if (items.isEmpty()) {
+            Toast.makeText(this, "El carrito estÃ¡ vacÃ­o", Toast.LENGTH_SHORT).show()
+            return
+        }
+
+        val total = CarritoManager.obtenerTotal()
+
+        // 1. Guardar en SQLite
+        val guardado = pedidoDao.registrarPedido(items, total)
+
+        if (guardado) {
+            // 2. Construir mensaje de WhatsApp
+            val mensajeBuilder = StringBuilder()
+            mensajeBuilder.append("Â¡Hola ModaApp! ðŸ‘‹ Deseo realizar el siguiente pedido:\n\n")
+
+            for (item in items) {
+                mensajeBuilder.append("â€¢ ${item.ropa.modelo} (${item.ropa.talla} / ${item.ropa.color}) x${item.cantidad} - S/ ${String.format("%.2f", item.subtotal)}\n")
+            }
+
+            mensajeBuilder.append("\n*Total: S/ ${String.format("%.2f", total)}*")
+
+            // 3. Limpiar carrito en memoria
+            CarritoManager.limpiarCarrito()
+            adapter.actualizarLista(emptyList())
+            actualizarResumen()
+
+            // 4. Abrir WhatsApp
+            enviarAWhatsApp(mensajeBuilder.toString())
+        } else {
+            Toast.makeText(this, "Error al guardar el pedido en la base de datos", Toast.LENGTH_SHORT).show()
+        }
+    }
+
+    private fun enviarAWhatsApp(mensaje: String) {
+        try {
+            val numeroTelefono = "51999999999" // NÃºmero de prueba de la tienda
+            val mensajeCodificado = URLEncoder.encode(mensaje, "UTF-8")
+            val uri = Uri.parse("https://api.whatsapp.com/send?phone=$numeroTelefono&text=$mensajeCodificado")
+
+            val intent = Intent(Intent.ACTION_VIEW, uri)
+            startActivity(intent)
+        } catch (e: Exception) {
+            Toast.makeText(this, "Pedido registrado. No se pudo abrir WhatsApp.", Toast.LENGTH_LONG).show()
+        }
+    }
+}
+package com.senati.modaapp
+
+import android.net.Uri
+import android.view.LayoutInflater
+import android.view.ViewGroup
+import androidx.recyclerview.widget.RecyclerView
+import com.senati.modaapp.databinding.ItemCarritoBinding
+
+class CarritoAdapter(
+    private var listaItems: List<ItemCarrito>,
+    private val onItemLongClick: (Int) -> Unit
+) : RecyclerView.Adapter<CarritoAdapter.CarritoViewHolder>() {
+
+    inner class CarritoViewHolder(val binding: ItemCarritoBinding) :
+        RecyclerView.ViewHolder(binding.root)
+
+    override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): CarritoViewHolder {
+        val binding = ItemCarritoBinding.inflate(
+            LayoutInflater.from(parent.context),
+            parent,
+            false
+        )
+        return CarritoViewHolder(binding)
+    }
+
+    override fun onBindViewHolder(holder: CarritoViewHolder, position: Int) {
+        val item = listaItems[position]
+        val binding = holder.binding
+
+        binding.tvModeloCarrito.text = "${item.ropa.modelo} Â· ${item.ropa.talla}"
+        binding.tvDetalleCarrito.text = "${item.ropa.color} Â· ${item.cantidad} x S/ ${String.format("%.2f", item.ropa.precio)}"
+        binding.tvSubtotalCarrito.text = String.format("S/ %.2f", item.subtotal)
+
+        if (item.ropa.foto.isNotEmpty()) {
+            try {
+                binding.ivFotoCarrito.setImageURI(Uri.parse(item.ropa.foto))
+            } catch (e: Exception) {
+                binding.ivFotoCarrito.setImageResource(android.R.drawable.ic_menu_gallery)
+            }
+        } else {
+            binding.ivFotoCarrito.setImageResource(android.R.drawable.ic_menu_gallery)
+        }
+
+        // Eliminar Ã­tem al mantener presionado (Prototipo P2-05)
+        binding.root.setOnLongClickListener {
+            val pos = holder.bindingAdapterPosition
+            if (pos != RecyclerView.NO_POSITION) {
+                onItemLongClick(pos)
+            }
+            true
+        }
+    }
+
+    override fun getItemCount(): Int = listaItems.size
+
+    fun actualizarLista(nuevaLista: List<ItemCarrito>) {
+        listaItems = nuevaLista
+        notifyDataSetChanged()
+    }
+}
+package com.senati.modaapp
+
+object CarritoManager {
+    private val listaItems = mutableListOf<ItemCarrito>()
+
+    fun agregarProducto(ropa: Ropa) {
+        val itemExistente = listaItems.find { it.ropa.id == ropa.id }
+        if (itemExistente != null) {
+            itemExistente.cantidad++
+        } else {
+            listaItems.add(ItemCarrito(ropa, 1))
+        }
+    }
+
+    fun obtenerItems(): List<ItemCarrito> = listaItems
+
+    fun obtenerTotal(): Double {
+        return listaItems.sumOf { it.subtotal }
+    }
+
+    fun obtenerCantidadTotalItems(): Int {
+        return listaItems.sumOf { it.cantidad }
+    }
+
+    fun eliminarItem(posicion: Int) {
+        if (posicion in listaItems.indices) {
+            listaItems.removeAt(posicion)
+        }
+    }
+
+    fun limpiarCarrito() {
+        listaItems.clear()
+    }
+}
+package com.senati.modaapp
+
+import android.content.Intent
+import android.os.Bundle
+import android.widget.Toast
+import androidx.appcompat.app.AppCompatActivity
+import androidx.recyclerview.widget.GridLayoutManager
+import com.senati.modaapp.databinding.ActivityCatalogoBinding
+
+class CatalogoActivity : AppCompatActivity() {
+
+    private lateinit var binding: ActivityCatalogoBinding
+    private lateinit var ropaDao: RopaDao
+    private lateinit var adapter: RopaAdapter
+    private var listaCategorias: List<Categoria> = emptyList()
+
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+
+        binding = ActivityCatalogoBinding.inflate(layoutInflater)
+        setContentView(binding.root)
+
+        ropaDao = RopaDao(this)
+
+        configurarRecyclerView()
+        configurarFiltros()
+
+        // Abrir la pantalla del carrito de compras (HU-02)
+        binding.btnVerCarrito.setOnClickListener {
+            val intent = Intent(this, CarritoActivity::class.java)
+            startActivity(intent)
+        }
+    }
+
+    override fun onResume() {
+        super.onResume()
+        cargarPrendas(0)
+    }
+
+    private fun configurarRecyclerView() {
+        binding.recyclerCatalogo.layoutManager = GridLayoutManager(this, 2)
+
+        adapter = RopaAdapter(emptyList()) { prenda ->
+            // Agregar el producto seleccionado al CarritoManager (HU-08)
+            CarritoManager.agregarProducto(prenda)
+            Toast.makeText(this, "${prenda.modelo} aÃ±adido al carrito", Toast.LENGTH_SHORT).show()
+        }
+        binding.recyclerCatalogo.adapter = adapter
+    }
+
+    private fun configurarFiltros() {
+        listaCategorias = ropaDao.listarCategorias()
+
+        binding.chipGroupCategorias.setOnCheckedStateChangeListener { _, checkedIds ->
+            if (checkedIds.isEmpty()) return@setOnCheckedStateChangeListener
+
+            val checkedId = checkedIds[0]
+            val idCategoria = when (checkedId) {
+                R.id.chipPolos -> obtenerIdCategoria("Polos")
+                R.id.chipPantalones -> obtenerIdCategoria("Pantalones")
+                R.id.chipVestidos -> obtenerIdCategoria("Vestidos")
+                else -> 0
+            }
+
+            cargarPrendas(idCategoria)
+        }
+    }
+
+    private fun obtenerIdCategoria(nombre: String): Int {
+        return listaCategorias.find { it.nombre.equals(nombre, ignoreCase = true) }?.id ?: 0
+    }
+
+    private fun cargarPrendas(idCategoria: Int) {
+        val lista = ropaDao.listarDisponibles(idCategoria)
+        adapter.actualizarLista(lista)
+    }
+}
+package com.senati.modaapp
+
+data class Categoria(
+    val id: Int,
+    val nombre: String
+)
+package com.senati.modaapp
+
+import android.content.Context
+import android.database.sqlite.SQLiteDatabase
+import android.database.sqlite.SQLiteOpenHelper
+
+class DBHelper(context: Context) : SQLiteOpenHelper(context, DB_NAME, null, DB_VERSION) {
+
+    companion object {
+        const val DB_NAME = "modaapp.db"
+        const val DB_VERSION = 1
+    }
+
+    override fun onCreate(db: SQLiteDatabase) {
+        // Tabla de Usuarios (HU-04)
+        db.execSQL("""
+            CREATE TABLE usuario (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                usuario TEXT UNIQUE,
+                clave TEXT,
+                rol TEXT,
+                telefono TEXT
+            )
+        """.trimIndent())
+
+        // Tabla de CategorÃ­as (HU-05, HU-06)
+        db.execSQL("""
+            CREATE TABLE categoria (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                nombre TEXT UNIQUE
+            )
+        """.trimIndent())
+
+        // Tabla de Ropa (HU-05)
+        db.execSQL("""
+            CREATE TABLE ropa (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                modelo TEXT NOT NULL,
+                id_categoria INTEGER REFERENCES categoria(id),
+                talla TEXT,
+                marca TEXT,
+                color TEXT,
+                precio REAL CHECK(precio > 0),
+                cantidad INTEGER CHECK(cantidad >= 0),
+                foto TEXT
+            )
+        """.trimIndent())
+
+        // Insertar usuario administrador por defecto (HU-04)
+        db.execSQL("INSERT INTO usuario (usuario, clave, rol, telefono) VALUES ('admin', '1234', 'ADMIN', '987654321')")
+
+        // Precargar las 5 categorÃ­as oficiales (HU-05, HU-06)
+        db.execSQL("INSERT INTO categoria (nombre) VALUES ('Polos')")
+        db.execSQL("INSERT INTO categoria (nombre) VALUES ('Pantalones')")
+        db.execSQL("INSERT INTO categoria (nombre) VALUES ('Vestidos')")
+        db.execSQL("INSERT INTO categoria (nombre) VALUES ('Casacas')")
+        db.execSQL("INSERT INTO categoria (nombre) VALUES ('Zapatillas')")
+    }
+
+    override fun onUpgrade(db: SQLiteDatabase, oldVersion: Int, newVersion: Int) {
+        // Las migraciones de tablas para pedidos se gestionarÃ¡n en el Sprint 3 (DB_VERSION = 2)
+    }
+
+    override fun onConfigure(db: SQLiteDatabase) {
+        super.onConfigure(db)
+        db.setForeignKeyConstraintsEnabled(true)
+    }
+}
+package com.senati.modaapp
+
+import android.os.Bundle
+import android.text.Editable
+import android.text.TextWatcher
+import android.widget.Toast
+import androidx.appcompat.app.AlertDialog
+import androidx.appcompat.app.AppCompatActivity
+import androidx.recyclerview.widget.LinearLayoutManager
+import com.senati.modaapp.databinding.ActivityGestionRopaBinding
+
+class GestionRopaActivity : AppCompatActivity() {
+
+    private lateinit var binding: ActivityGestionRopaBinding
+    private lateinit var ropaDao: RopaDao
+    private lateinit var adapter: GestionRopaAdapter
+
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+
+        binding = ActivityGestionRopaBinding.inflate(layoutInflater)
+        setContentView(binding.root)
+
+        ropaDao = RopaDao(this)
+
+        configurarRecyclerView()
+        configurarBuscador()
+    }
+
+    override fun onResume() {
+        super.onResume()
+        cargarPrendas("")
+    }
+
+    private fun configurarRecyclerView() {
+        binding.rvGestionRopa.layoutManager = LinearLayoutManager(this)
+
+        adapter = GestionRopaAdapter(
+            listaRopa = emptyList(),
+            onEditarClick = { ropa ->
+                Toast.makeText(this, "Editar: ${ropa.modelo}", Toast.LENGTH_SHORT).show()
+            },
+            onEliminarClick = { ropa ->
+                confirmarEliminacion(ropa)
+            }
+        )
+        binding.rvGestionRopa.adapter = adapter
+    }
+
+    private fun configurarBuscador() {
+        binding.etBuscarRopa.addTextChangedListener(object : TextWatcher {
+            override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) {}
+            override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) {
+                cargarPrendas(s.toString().trim())
+            }
+            override fun afterTextChanged(s: Editable?) {}
+        })
+    }
+
+    private fun cargarPrendas(texto: String) {
+        val lista = if (texto.isEmpty()) {
+            ropaDao.listarDisponibles()
+        } else {
+            ropaDao.buscarRopa(texto)
+        }
+        adapter.actualizarLista(lista)
+    }
+
+    private fun confirmarEliminacion(ropa: Ropa) {
+        AlertDialog.Builder(this)
+            .setTitle("Eliminar prenda")
+            .setMessage("Â¿EstÃ¡s seguro de eliminar '${ropa.modelo}'?")
+            .setPositiveButton("Eliminar") { _, _ ->
+                val eliminado = ropaDao.eliminar(ropa.id)
+                if (eliminado) {
+                    Toast.makeText(this, "Prenda eliminada", Toast.LENGTH_SHORT).show()
+                    cargarPrendas(binding.etBuscarRopa.text.toString().trim())
+                } else {
+                    Toast.makeText(this, "Error al eliminar", Toast.LENGTH_SHORT).show()
+                }
+            }
+            .setNegativeButton("Cancelar", null)
+            .show()
+    }
+}
+package com.senati.modaapp
+
+import android.net.Uri
+import android.view.LayoutInflater
+import android.view.ViewGroup
+import androidx.recyclerview.widget.RecyclerView
+import com.senati.modaapp.databinding.ItemGestionRopaBinding
+
+class GestionRopaAdapter(
+    private var listaRopa: List<Ropa>,
+    private val onEditarClick: (Ropa) -> Unit,
+    private val onEliminarClick: (Ropa) -> Unit
+) : RecyclerView.Adapter<GestionRopaAdapter.GestionViewHolder>() {
+
+    inner class GestionViewHolder(val binding: ItemGestionRopaBinding) :
+        RecyclerView.ViewHolder(binding.root)
+
+    override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): GestionViewHolder {
+        val binding = ItemGestionRopaBinding.inflate(
+            LayoutInflater.from(parent.context),
+            parent,
+            false
+        )
+        return GestionViewHolder(binding)
+    }
+
+    override fun onBindViewHolder(holder: GestionViewHolder, position: Int) {
+        val ropa = listaRopa[position]
+        val binding = holder.binding
+
+        binding.tvModeloGestion.text = ropa.modelo
+        binding.tvDetalleGestion.text = "Marca: ${ropa.marca} Â· Stock: ${ropa.cantidad}"
+        binding.tvPrecioGestion.text = String.format("S/ %.2f", ropa.precio)
+
+        if (ropa.foto.isNotEmpty()) {
+            try {
+                binding.ivFotoGestion.setImageURI(Uri.parse(ropa.foto))
+            } catch (e: Exception) {
+                binding.ivFotoGestion.setImageResource(android.R.drawable.ic_menu_gallery)
+            }
+        } else {
+            binding.ivFotoGestion.setImageResource(android.R.drawable.ic_menu_gallery)
+        }
+
+        binding.btnEditarRopa.setOnClickListener { onEditarClick(ropa) }
+        binding.btnEliminarRopa.setOnClickListener { onEliminarClick(ropa) }
+    }
+
+    override fun getItemCount(): Int = listaRopa.size
+
+    fun actualizarLista(nuevaLista: List<Ropa>) {
+        listaRopa = nuevaLista
+        notifyDataSetChanged()
+    }
+}
+package com.senati.modaapp
+
+data class ItemCarrito(
+    val ropa: Ropa,
+    var cantidad: Int = 1
+) {
+    val subtotal: Double
+        get() = ropa.precio * cantidad
+}
+package com.senati.modaapp
+
+import android.content.Intent
+import android.os.Bundle
+import android.widget.Toast
+import androidx.appcompat.app.AppCompatActivity
+import com.senati.modaapp.databinding.ActivityMainBinding
+
+class MainActivity : AppCompatActivity() {
+
+    private lateinit var binding: ActivityMainBinding
+    private lateinit var usuarioDao: UsuarioDao
+
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+
+        binding = ActivityMainBinding.inflate(layoutInflater)
+        setContentView(binding.root)
+
+        usuarioDao = UsuarioDao(this)
+
+        // BotÃ³n Ingresar como Administrador (HU-04, CA2, CA3)
+        binding.btnIngresarAdmin.setOnClickListener {
+            val usuarioInput = binding.etUsuario.text.toString().trim()
+            val claveInput = binding.etClave.text.toString().trim()
+
+            var isValid = true
+
+            if (usuarioInput.isEmpty()) {
+                binding.etUsuario.error = getString(R.string.error_campo_vacio)
+                isValid = false
+            } else {
+                binding.etUsuario.error = null
+            }
+
+            if (claveInput.isEmpty()) {
+                binding.etClave.error = getString(R.string.error_campo_vacio)
+                isValid = false
+            } else {
+                binding.etClave.error = null
+            }
+
+            if (isValid) {
+                // ValidaciÃ³n real consultando la tabla usuario de modaapp.db (HU-04)
+                val usuarioLogueado = usuarioDao.validarUsuario(usuarioInput, claveInput)
+
+                if (usuarioLogueado != null) {
+                    Toast.makeText(this, "Bienvenido ${usuarioLogueado.usuario}", Toast.LENGTH_SHORT).show()
+                    val intent = Intent(this, MenuActivity::class.java).apply {
+                        putExtra("EXTRA_USUARIO", usuarioLogueado.usuario)
+                        putExtra("EXTRA_ROL", usuarioLogueado.rol)
+                    }
+                    startActivity(intent)
+                    finish()
+                } else {
+                    // Credenciales incorrectas (CA3)
+                    Toast.makeText(this, getString(R.string.error_credenciales), Toast.LENGTH_SHORT).show()
+                }
+            }
+        }
+
+        // BotÃ³n Ver catÃ¡logo como cliente (HU-01, CA5)
+        binding.btnVerCatalogo.setOnClickListener {
+            val intent = Intent(this, CatalogoActivity::class.java)
+            startActivity(intent)
+        }
+    }
+}
+package com.senati.modaapp
+
+import android.content.Intent
+import android.os.Bundle
+import androidx.appcompat.app.AppCompatActivity
+import com.senati.modaapp.databinding.ActivityMenuBinding
+
+class MenuActivity : AppCompatActivity() {
+
+    private lateinit var binding: ActivityMenuBinding
+
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+
+        binding = ActivityMenuBinding.inflate(layoutInflater)
+        setContentView(binding.root)
+
+        val usuario = intent.getStringExtra("EXTRA_USUARIO") ?: "admin"
+        binding.tvBienvenida.text = "Hola, $usuario"
+
+        // Abrir formulario para registrar prenda (HU-05)
+        binding.cardRopa.setOnClickListener {
+            val intent = Intent(this, RegistrarRopaActivity::class.java)
+            startActivity(intent)
+        }
+
+        binding.cardPedidos.setOnClickListener { }
+        binding.cardClientes.setOnClickListener { }
+        binding.cardReportes.setOnClickListener { }
+
+        // BotÃ³n Salir (HU-02, CA3)
+        binding.btnSalir.setOnClickListener {
+            val intent = Intent(this, MainActivity::class.java)
+            startActivity(intent)
+            finish()
+        }
+    }
+}
+package com.senati.modaapp
+
+import android.content.ContentValues
+import android.content.Context
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
+
+class PedidoDao(context: Context) {
+
+    private val dbHelper = DBHelper(context)
+
+    fun registrarPedido(items: List<ItemCarrito>, total: Double, idUsuario: Int = 1): Boolean {
+        val db = dbHelper.writableDatabase
+        db.beginTransaction()
+
+        return try {
+            val fechaActual = SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.getDefault()).format(Date())
+
+            val valuesPedido = ContentValues().apply {
+                put("id_usuario", idUsuario)
+                put("fecha", fechaActual)
+                put("total", total)
+                put("estado", "Pendiente")
+            }
+
+            val idPedido = db.insert("pedido", null, valuesPedido)
+
+            if (idPedido == -1L) {
+                return false
+            }
+
+            // Insertar el detalle de cada prenda en el pedido
+            for (item in items) {
+                val valuesDetalle = ContentValues().apply {
+                    put("id_pedido", idPedido)
+                    put("id_ropa", item.ropa.id)
+                    put("cantidad", item.cantidad)
+                    put("precio_unitario", item.ropa.precio)
+                }
+                db.insert("detalle_pedido", null, valuesDetalle)
+            }
+
+            db.setTransactionSuccessful()
+            true
+        } catch (e: Exception) {
+            e.printStackTrace()
+            false
+        } finally {
+            db.endTransaction()
+            db.close()
+        }
+    }
+}
+package com.senati.modaapp
+
+import android.net.Uri
+import android.os.Bundle
+import android.widget.ArrayAdapter
+import android.widget.Toast
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.appcompat.app.AppCompatActivity
+import com.senati.modaapp.databinding.ActivityRegistrarRopaBinding
+
+class RegistrarRopaActivity : AppCompatActivity() {
+
+    private lateinit var binding: ActivityRegistrarRopaBinding
+    private lateinit var ropaDao: RopaDao
+    private var listaCategorias: List<Categoria> = emptyList()
+    private var fotoUriSeleccionada: String = ""
+
+    // Launcher para abrir la galerÃ­a del dispositivo (HU-05)
+    private val seleccionarFotoLauncher = registerForActivityResult(
+        ActivityResultContracts.GetContent()
+    ) { uri: Uri? ->
+        if (uri != null) {
+            // Intentar persistir permisos de lectura para la URI seleccionada
+            try {
+                contentResolver.takePersistableUriPermission(
+                    uri,
+                    android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION
+                )
+            } catch (e: Exception) {
+                e.printStackTrace()
+            }
+            fotoUriSeleccionada = uri.toString()
+            binding.ivFotoPrenda.setImageURI(uri)
+        }
+    }
+
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+
+        binding = ActivityRegistrarRopaBinding.inflate(layoutInflater)
+        setContentView(binding.root)
+
+        ropaDao = RopaDao(this)
+
+        configurarSpinners()
+
+        // Seleccionar foto de la galerÃ­a
+        binding.btnSeleccionarFoto.setOnClickListener {
+            seleccionarFotoLauncher.launch("image/*")
+        }
+
+        // Guardar la prenda
+        binding.btnGuardarRopa.setOnClickListener {
+            guardarPrenda()
+        }
+    }
+
+    private fun configurarSpinners() {
+        // Cargar CategorÃ­as desde SQLite (HU-05)
+        listaCategorias = ropaDao.listarCategorias()
+        val nombresCategorias = listaCategorias.map { it.nombre }
+        val adapterCategoria = ArrayAdapter(
+            this,
+            android.R.layout.simple_spinner_dropdown_item,
+            nombresCategorias
+        )
+        binding.spCategoria.adapter = adapterCategoria
+
+        // Cargar Tallas predefinidas
+        val tallas = listOf("S", "M", "L", "XL", "28", "30", "32", "34", "36", "38", "40", "ESTÃNDAR")
+        val adapterTalla = ArrayAdapter(
+            this,
+            android.R.layout.simple_spinner_dropdown_item,
+            tallas
+        )
+        binding.spTalla.adapter = adapterTalla
+    }
+
+    private fun guardarPrenda() {
+        val modelo = binding.etModelo.text.toString().trim()
+        val marca = binding.etMarca.text.toString().trim()
+        val color = binding.etColor.text.toString().trim()
+        val cantidadStr = binding.etCantidad.text.toString().trim()
+        val precioStr = binding.etPrecio.text.toString().trim()
+
+        if (modelo.isEmpty() || marca.isEmpty() || color.isEmpty() || cantidadStr.isEmpty() || precioStr.isEmpty()) {
+            Toast.makeText(this, "Por favor, completa todos los campos", Toast.LENGTH_SHORT).show()
+            return
+        }
+
+        val cantidad = cantidadStr.toIntOrNull() ?: 0
+        val precio = precioStr.toDoubleOrNull() ?: 0.0
+
+        if (precio <= 0) {
+            binding.etPrecio.error = "Ingresa un precio vÃ¡lido mayores a S/ 0"
+            return
+        }
+
+        val posicionCat = binding.spCategoria.selectedItemPosition
+        val idCategoria = if (listaCategorias.isNotEmpty()) listaCategorias[posicionCat].id else 1
+        val tallaSeleccionada = binding.spTalla.selectedItem.toString()
+
+        val nuevaRopa = Ropa(
+            modelo = modelo,
+            idCategoria = idCategoria,
+            talla = tallaSeleccionada,
+            marca = marca,
+            color = color,
+            precio = precio,
+            cantidad = cantidad,
+            foto = fotoUriSeleccionada
+        )
+
+        val insertado = ropaDao.insertar(nuevaRopa)
+
+        if (insertado) {
+            Toast.makeText(this, "Prenda registrada correctamente", Toast.LENGTH_SHORT).show()
+            finish()
+        } else {
+            Toast.makeText(this, "Error al registrar la prenda", Toast.LENGTH_SHORT).show()
+        }
+    }
+}
+package com.senati.modaapp
+
+data class Ropa(
+    val id: Int = 0,
+    val modelo: String,
+    val idCategoria: Int,
+    val categoriaNombre: String = "",
+    val talla: String,
+    val marca: String,
+    val color: String,
+    val precio: Double,
+    val cantidad: Int,
+    val foto: String
+)
+package com.senati.modaapp
+
+import android.net.Uri
+import android.view.LayoutInflater
+import android.view.ViewGroup
+import androidx.recyclerview.widget.RecyclerView
+import com.senati.modaapp.databinding.ItemRopaBinding
+
+class RopaAdapter(
+    private var listaRopa: List<Ropa>,
+    private val onAgregarClick: (Ropa) -> Unit
+) : RecyclerView.Adapter<RopaAdapter.RopaViewHolder>() {
+
+    inner class RopaViewHolder(val binding: ItemRopaBinding) :
+        RecyclerView.ViewHolder(binding.root)
+
+    override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): RopaViewHolder {
+        val binding = ItemRopaBinding.inflate(
+            LayoutInflater.from(parent.context),
+            parent,
+            false
+        )
+        return RopaViewHolder(binding)
+    }
+
+    override fun onBindViewHolder(holder: RopaViewHolder, position: Int) {
+        val ropa = listaRopa[position]
+        with(holder.binding) {
+            tvModeloItem.text = ropa.modelo
+            tvDetalleItem.text = "Talla ${ropa.talla} Â· ${ropa.color}"
+            tvPrecioItem.text = String.format("S/ %.2f", ropa.precio)
+
+            if (ropa.foto.isNotEmpty()) {
+                try {
+                    ivFotoItem.setImageURI(Uri.parse(ropa.foto))
+                } catch (e: Exception) {
+                    ivFotoItem.setImageResource(android.R.drawable.ic_menu_gallery)
+                }
+            } else {
+                ivFotoItem.setImageResource(android.R.drawable.ic_menu_gallery)
+            }
+
+            btnAgregarItem.setOnClickListener {
+                onAgregarClick(ropa)
+            }
+        }
+    }
+
+    override fun getItemCount(): Int = listaRopa.size
+
+    fun actualizarLista(nuevaLista: List<Ropa>) {
+        listaRopa = nuevaLista
+        notifyDataSetChanged()
+    }
+}
+package com.senati.modaapp
+
+import android.content.ContentValues
+import android.content.Context
+
+class RopaDao(context: Context) {
+
+    private val dbHelper = DBHelper(context)
+
+    fun insertar(ropa: Ropa): Boolean {
+        val db = dbHelper.writableDatabase
+        val values = ContentValues().apply {
+            put("modelo", ropa.modelo)
+            put("id_categoria", ropa.idCategoria)
+            put("talla", ropa.talla)
+            put("marca", ropa.marca)
+            put("color", ropa.color)
+            put("precio", ropa.precio)
+            put("cantidad", ropa.cantidad)
+            put("foto", ropa.foto)
+        }
+        val id = db.insert("ropa", null, values)
+        db.close()
+        return id != -1L
+    }
+
+    fun listarCategorias(): List<Categoria> {
+        val lista = mutableListOf<Categoria>()
+        val db = dbHelper.readableDatabase
+        val cursor = db.rawQuery("SELECT * FROM categoria", null)
+
+        if (cursor.moveToFirst()) {
+            do {
+                lista.add(
+                    Categoria(
+                        id = cursor.getInt(cursor.getColumnIndexOrThrow("id")),
+                        nombre = cursor.getString(cursor.getColumnIndexOrThrow("nombre"))
+                    )
+                )
+            } while (cursor.moveToNext())
+        }
+        cursor.close()
+        db.close()
+        return lista
+    }
+
+    fun listarDisponibles(idCategoria: Int = 0): List<Ropa> {
+        val lista = mutableListOf<Ropa>()
+        val db = dbHelper.readableDatabase
+        val query = if (idCategoria > 0) {
+            "SELECT * FROM ropa WHERE id_categoria = $idCategoria AND cantidad > 0"
+        } else {
+            "SELECT * FROM ropa WHERE cantidad > 0"
+        }
+
+        val cursor = db.rawQuery(query, null)
+        if (cursor.moveToFirst()) {
+            do {
+                lista.add(
+                    Ropa(
+                        id = cursor.getInt(cursor.getColumnIndexOrThrow("id")),
+                        modelo = cursor.getString(cursor.getColumnIndexOrThrow("modelo")),
+                        idCategoria = cursor.getInt(cursor.getColumnIndexOrThrow("id_categoria")),
+                        talla = cursor.getString(cursor.getColumnIndexOrThrow("talla")),
+                        marca = cursor.getString(cursor.getColumnIndexOrThrow("marca")),
+                        color = cursor.getString(cursor.getColumnIndexOrThrow("color")),
+                        precio = cursor.getDouble(cursor.getColumnIndexOrThrow("precio")),
+                        cantidad = cursor.getInt(cursor.getColumnIndexOrThrow("cantidad")),
+                        foto = cursor.getString(cursor.getColumnIndexOrThrow("foto"))
+                    )
+                )
+            } while (cursor.moveToNext())
+        }
+        cursor.close()
+        db.close()
+        return lista
+    }
+
+    // Buscar ropa por modelo o marca (HU-07)
+    fun buscarRopa(texto: String): List<Ropa> {
+        val lista = mutableListOf<Ropa>()
+        val db = dbHelper.readableDatabase
+        val cursor = db.rawQuery(
+            "SELECT * FROM ropa WHERE modelo LIKE '%$texto%' OR marca LIKE '%$texto%'", null
+        )
+
+        if (cursor.moveToFirst()) {
+            do {
+                lista.add(
+                    Ropa(
+                        id = cursor.getInt(cursor.getColumnIndexOrThrow("id")),
+                        modelo = cursor.getString(cursor.getColumnIndexOrThrow("modelo")),
+                        idCategoria = cursor.getInt(cursor.getColumnIndexOrThrow("id_categoria")),
+                        talla = cursor.getString(cursor.getColumnIndexOrThrow("talla")),
+                        marca = cursor.getString(cursor.getColumnIndexOrThrow("marca")),
+                        color = cursor.getString(cursor.getColumnIndexOrThrow("color")),
+                        precio = cursor.getDouble(cursor.getColumnIndexOrThrow("precio")),
+                        cantidad = cursor.getInt(cursor.getColumnIndexOrThrow("cantidad")),
+                        foto = cursor.getString(cursor.getColumnIndexOrThrow("foto"))
+                    )
+                )
+            } while (cursor.moveToNext())
+        }
+        cursor.close()
+        db.close()
+        return lista
+    }
+
+    // Actualizar prenda existente (HU-07)
+    fun actualizar(ropa: Ropa): Boolean {
+        val db = dbHelper.writableDatabase
+        val values = ContentValues().apply {
+            put("modelo", ropa.modelo)
+            put("id_categoria", ropa.idCategoria)
+            put("talla", ropa.talla)
+            put("marca", ropa.marca)
+            put("color", ropa.color)
+            put("precio", ropa.precio)
+            put("cantidad", ropa.cantidad)
+            put("foto", ropa.foto)
+        }
+        val filasAfectadas = db.update("ropa", values, "id = ?", arrayOf(ropa.id.toString()))
+        db.close()
+        return filasAfectadas > 0
+    }
+
+    // Eliminar prenda (HU-07)
+    fun eliminar(id: Int): Boolean {
+        val db = dbHelper.writableDatabase
+        val filasAfectadas = db.delete("ropa", "id = ?", arrayOf(id.toString()))
+        db.close()
+        return filasAfectadas > 0
+    }
+}
+package com.senati.modaapp
+
+data class Usuario(
+    val id: Int,
+    val usuario: String,
+    val clave: String,
+    val rol: String,
+    val telefono: String
+)
+package com.senati.modaapp
+
+import android.content.Context
+import android.database.Cursor
+
+class UsuarioDao(context: Context) {
+    private val dbHelper = DBHelper(context)
+
+    // Consulta parametrizada a la tabla usuario (HU-04, CA2)
+    fun validarUsuario(usuario: String, clave: String): Usuario? {
+        val db = dbHelper.readableDatabase
+        val cursor: Cursor = db.rawQuery(
+            "SELECT * FROM usuario WHERE usuario = ? AND clave = ?",
+            arrayOf(usuario, clave)
+        )
+        var user: Usuario? = null
+        if (cursor.moveToFirst()) {
+            val id = cursor.getInt(cursor.getColumnIndexOrThrow("id"))
+            val userStr = cursor.getString(cursor.getColumnIndexOrThrow("usuario"))
+            val passStr = cursor.getString(cursor.getColumnIndexOrThrow("clave"))
+            val rolStr = cursor.getString(cursor.getColumnIndexOrThrow("rol"))
+            val telStr = cursor.getString(cursor.getColumnIndexOrThrow("telefono"))
+            user = Usuario(id, userStr, passStr, rolStr, telStr)
+        }
+        cursor.close()
+        db.close()
+        return user
     }
 }
 <?xml version="1.0" encoding="utf-8"?>
@@ -243,59 +1247,1191 @@ class MainActivity : AppCompatActivity() {
         android:strokeColor="#00000000" />
 </vector>
 <?xml version="1.0" encoding="utf-8"?>
-<androidx.constraintlayout.widget.ConstraintLayout xmlns:android="http://schemas.android.com/apk/res/android"
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:app="http://schemas.android.com/apk/res-auto"
     xmlns:tools="http://schemas.android.com/tools"
-    android:id="@+id/main"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
-    tools:context=".MainActivity">
+    android:orientation="vertical"
+    android:padding="20dp"
+    android:background="@color/fondo_gris"
+    tools:context=".CarritoActivity">
 
     <TextView
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
-        android:text="Hello World!"
-        app:layout_constraintBottom_toBottomOf="parent"
-        app:layout_constraintEnd_toEndOf="parent"
-        app:layout_constraintStart_toStartOf="parent"
-        app:layout_constraintTop_toTopOf="parent" />
+        android:text="@string/titulo_carrito"
+        android:textSize="22sp"
+        android:textStyle="bold"
+        android:textColor="@color/black"
+        android:layout_marginBottom="16dp" />
 
-</androidx.constraintlayout.widget.ConstraintLayout>
+    <!-- Lista de prendas en el carrito -->
+    <androidx.recyclerview.widget.RecyclerView
+        android:id="@+id/recyclerCarrito"
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1"
+        android:layout_marginBottom="16dp" />
+
+    <!-- SecciÃ³n de Total -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:layout_marginBottom="20dp">
+
+        <TextView
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:text="Total"
+            android:textSize="18sp"
+            android:textStyle="bold"
+            android:textColor="@color/black" />
+
+        <TextView
+            android:id="@+id/tvTotalCarrito"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="S/ 0.00"
+            android:textSize="22sp"
+            android:textStyle="bold"
+            android:textColor="@color/rosa_moda" />
+    </LinearLayout>
+
+    <!-- BotÃ³n Hacer Pedido -->
+    <com.google.android.material.button.MaterialButton
+        android:id="@+id/btnHacerPedido"
+        android:layout_width="match_parent"
+        android:layout_height="55dp"
+        android:text="Hacer pedido"
+        android:textSize="15sp"
+        app:backgroundTint="@color/rosa_moda"
+        app:cornerRadius="28dp" />
+
+</LinearLayout>
+<?xml version="1.0" encoding="utf-8"?>
+<androidx.coordinatorlayout.widget.CoordinatorLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    xmlns:tools="http://schemas.android.com/tools"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="@color/fondo_gris"
+    tools:context=".CatalogoActivity">
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:orientation="vertical"
+        android:padding="16dp">
+
+        <!-- Encabezado con BotÃ³n del Carrito -->
+        <RelativeLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginBottom="16dp">
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="@string/titulo_catalogo"
+                android:textSize="22sp"
+                android:textStyle="bold"
+                android:textColor="@color/black" />
+
+            <!-- BotÃ³n de Carrito (Prototipo P2-04) -->
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/btnVerCarrito"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_alignParentEnd="true"
+                android:text="Carrito"
+                android:textSize="13sp"
+                app:backgroundTint="@color/rosa_moda"
+                app:cornerRadius="20dp" />
+        </RelativeLayout>
+
+        <!-- Filtros por CategorÃ­a (Prototipo P2-04) -->
+        <HorizontalScrollView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:scrollbars="none"
+            android:layout_marginBottom="16dp">
+
+            <com.google.android.material.chip.ChipGroup
+                android:id="@+id/chipGroupCategorias"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                app:singleSelection="true"
+                app:selectionRequired="true">
+
+                <com.google.android.material.chip.Chip
+                    android:id="@+id/chipTodas"
+                    style="@style/Widget.MaterialComponents.Chip.Choice"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:checked="true"
+                    android:text="Todas" />
+
+                <com.google.android.material.chip.Chip
+                    android:id="@+id/chipPolos"
+                    style="@style/Widget.MaterialComponents.Chip.Choice"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="Polos" />
+
+                <com.google.android.material.chip.Chip
+                    android:id="@+id/chipPantalones"
+                    style="@style/Widget.MaterialComponents.Chip.Choice"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="Pantalones" />
+
+                <com.google.android.material.chip.Chip
+                    android:id="@+id/chipVestidos"
+                    style="@style/Widget.MaterialComponents.Chip.Choice"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="Vestidos" />
+            </com.google.android.material.chip.ChipGroup>
+        </HorizontalScrollView>
+
+        <!-- Grilla de prendas en el catÃ¡logo -->
+        <androidx.recyclerview.widget.RecyclerView
+            android:id="@+id/recyclerCatalogo"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent" />
+    </LinearLayout>
+
+</androidx.coordinatorlayout.widget.CoordinatorLayout>
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    xmlns:tools="http://schemas.android.com/tools"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:orientation="vertical"
+    android:background="@color/white"
+    android:padding="16dp"
+    tools:context=".GestionRopaActivity">
+
+    <!-- TÃ­tulo superior -->
+    <TextView
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="GestiÃ³n de Inventario"
+        android:textSize="22sp"
+        android:textStyle="bold"
+        android:textColor="@color/black"
+        android:layout_marginBottom="16dp" />
+
+    <!-- Campo de bÃºsqueda en tiempo real (HU-07) -->
+    <com.google.android.material.textfield.TextInputLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginBottom="16dp"
+        style="@style/Widget.MaterialComponents.TextInputLayout.OutlinedBox"
+        android:hint="Buscar por modelo o marca..."
+        app:startIconDrawable="@android:drawable/ic_menu_search">
+
+        <com.google.android.material.textfield.TextInputEditText
+            android:id="@+id/etBuscarRopa"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:inputType="text" />
+    </com.google.android.material.textfield.TextInputLayout>
+
+    <!-- RecyclerView con las prendas registradas -->
+    <androidx.recyclerview.widget.RecyclerView
+        android:id="@+id/rvGestionRopa"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent" />
+
+</LinearLayout>
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    xmlns:tools="http://schemas.android.com/tools"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:orientation="vertical"
+    android:gravity="center_horizontal"
+    android:padding="24dp"
+    android:background="@color/white"
+    tools:context=".MainActivity">
+
+    <!-- CÃ­rculo con la inicial M del logo (Prototipo P2-01) -->
+    <androidx.cardview.widget.CardView
+        android:layout_width="80dp"
+        android:layout_height="80dp"
+        android:layout_marginTop="32dp"
+        android:layout_marginBottom="16dp"
+        app:cardCornerRadius="40dp"
+        app:cardElevation="0dp"
+        app:cardBackgroundColor="@color/rosa_claro">
+
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:gravity="center"
+            android:text="M"
+            android:textColor="@color/rosa_moda"
+            android:textSize="36sp"
+            android:textStyle="bold" />
+    </androidx.cardview.widget.CardView>
+
+    <!-- TÃ­tulo de la App -->
+    <TextView
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="@string/app_name"
+        android:textSize="28sp"
+        android:textStyle="bold"
+        android:textColor="@color/black" />
+
+    <!-- SubtÃ­tulo -->
+    <TextView
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="@string/subtitle_login"
+        android:textSize="14sp"
+        android:textColor="#757575"
+        android:layout_marginBottom="32dp" />
+
+    <!-- Campo Usuario -->
+    <com.google.android.material.textfield.TextInputLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginBottom="16dp"
+        style="@style/Widget.MaterialComponents.TextInputLayout.OutlinedBox">
+
+        <com.google.android.material.textfield.TextInputEditText
+            android:id="@+id/etUsuario"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:hint="@string/hint_usuario"
+            android:inputType="text"
+            android:maxLines="1" />
+    </com.google.android.material.textfield.TextInputLayout>
+
+    <!-- Campo ContraseÃ±a con opciÃ³n de mostrar/ocultar (password_toggle) -->
+    <com.google.android.material.textfield.TextInputLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginBottom="24dp"
+        style="@style/Widget.MaterialComponents.TextInputLayout.OutlinedBox"
+        app:endIconMode="password_toggle">
+
+        <com.google.android.material.textfield.TextInputEditText
+            android:id="@+id/etClave"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:hint="@string/hint_contrasena"
+            android:inputType="textPassword"
+            android:maxLines="1" />
+    </com.google.android.material.textfield.TextInputLayout>
+
+    <!-- BotÃ³n Ingresar como Administrador -->
+    <com.google.android.material.button.MaterialButton
+        android:id="@+id/btnIngresarAdmin"
+        android:layout_width="match_parent"
+        android:layout_height="55dp"
+        android:text="@string/btn_ingresar_admin"
+        android:textSize="15sp"
+        app:backgroundTint="@color/rosa_moda"
+        app:cornerRadius="28dp"
+        android:layout_marginBottom="12dp" />
+
+    <!-- BotÃ³n Ver catÃ¡logo (cliente) -->
+    <com.google.android.material.button.MaterialButton
+        android:id="@+id/btnVerCatalogo"
+        android:layout_width="match_parent"
+        android:layout_height="55dp"
+        android:text="@string/btn_ver_catalogo"
+        android:textSize="15sp"
+        style="@style/Widget.MaterialComponents.Button.OutlinedButton"
+        app:strokeColor="@color/rosa_moda"
+        android:textColor="@color/rosa_moda"
+        app:cornerRadius="28dp" />
+
+    <!-- Texto de prueba -->
+    <TextView
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="@string/txt_prueba_admin"
+        android:textSize="12sp"
+        android:textColor="#9E9E9E"
+        android:layout_marginTop="24dp" />
+
+</LinearLayout>
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    xmlns:tools="http://schemas.android.com/tools"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:orientation="vertical"
+    android:padding="20dp"
+    android:background="@color/fondo_gris"
+    tools:context=".MenuActivity">
+
+    <!-- Encabezado superior -->
+    <RelativeLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginBottom="20dp">
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="@string/app_name"
+            android:textSize="22sp"
+            android:textStyle="bold"
+            android:textColor="@color/black" />
+
+        <androidx.cardview.widget.CardView
+            android:layout_width="36dp"
+            android:layout_height="36dp"
+            android:layout_alignParentEnd="true"
+            app:cardCornerRadius="18dp"
+            app:cardElevation="0dp"
+            app:cardBackgroundColor="@color/rosa_claro">
+
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="match_parent"
+                android:gravity="center"
+                android:text="A"
+                android:textColor="@color/rosa_moda"
+                android:textSize="16sp"
+                android:textStyle="bold" />
+        </androidx.cardview.widget.CardView>
+    </RelativeLayout>
+
+    <!-- Saludo al Administrador -->
+    <TextView
+        android:id="@+id/tvBienvenida"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="Hola, admin"
+        android:textSize="20sp"
+        android:textStyle="bold"
+        android:textColor="@color/black" />
+
+    <TextView
+        android:id="@+id/tvEstadoPedidos"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="Panel de administraciÃ³n"
+        android:textSize="14sp"
+        android:textColor="@color/rosa_moda"
+        android:layout_marginBottom="24dp" />
+
+    <!-- CuadrÃ­cula 2x2 de Opciones (Prototipo P2-02) -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1"
+        android:orientation="vertical">
+
+        <!-- Fila 1: Ropa y Pedidos -->
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="0dp"
+            android:layout_weight="1"
+            android:orientation="horizontal"
+            android:layout_marginBottom="12dp">
+
+            <!-- OpciÃ³n Ropa -->
+            <com.google.android.material.card.MaterialCardView
+                android:id="@+id/cardRopa"
+                android:layout_width="0dp"
+                android:layout_height="match_parent"
+                android:layout_weight="1"
+                android:layout_marginEnd="6dp"
+                android:clickable="true"
+                android:focusable="true"
+                app:cardCornerRadius="16dp"
+                app:cardElevation="2dp"
+                app:cardBackgroundColor="@color/white"
+                app:strokeWidth="0dp">
+
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="match_parent"
+                    android:orientation="vertical"
+                    android:gravity="center">
+
+                    <androidx.cardview.widget.CardView
+                        android:layout_width="48dp"
+                        android:layout_height="48dp"
+                        app:cardCornerRadius="24dp"
+                        app:cardElevation="0dp"
+                        app:cardBackgroundColor="@color/rosa_claro">
+
+                        <TextView
+                            android:layout_width="match_parent"
+                            android:layout_height="match_parent"
+                            android:gravity="center"
+                            android:text="R"
+                            android:textColor="@color/rosa_moda"
+                            android:textSize="20sp"
+                            android:textStyle="bold" />
+                    </androidx.cardview.widget.CardView>
+
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="@string/btn_ropa"
+                        android:textSize="16sp"
+                        android:textStyle="bold"
+                        android:textColor="@color/black"
+                        android:layout_marginTop="12dp" />
+                </LinearLayout>
+            </com.google.android.material.card.MaterialCardView>
+
+            <!-- OpciÃ³n Pedidos -->
+            <com.google.android.material.card.MaterialCardView
+                android:id="@+id/cardPedidos"
+                android:layout_width="0dp"
+                android:layout_height="match_parent"
+                android:layout_weight="1"
+                android:layout_marginStart="6dp"
+                android:clickable="true"
+                android:focusable="true"
+                app:cardCornerRadius="16dp"
+                app:cardElevation="2dp"
+                app:cardBackgroundColor="@color/white"
+                app:strokeWidth="0dp">
+
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="match_parent"
+                    android:orientation="vertical"
+                    android:gravity="center">
+
+                    <androidx.cardview.widget.CardView
+                        android:layout_width="48dp"
+                        android:layout_height="48dp"
+                        app:cardCornerRadius="24dp"
+                        app:cardElevation="0dp"
+                        app:cardBackgroundColor="@color/rosa_claro">
+
+                        <TextView
+                            android:layout_width="match_parent"
+                            android:layout_height="match_parent"
+                            android:gravity="center"
+                            android:text="P"
+                            android:textColor="@color/rosa_moda"
+                            android:textSize="20sp"
+                            android:textStyle="bold" />
+                    </androidx.cardview.widget.CardView>
+
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="@string/btn_pedidos"
+                        android:textSize="16sp"
+                        android:textStyle="bold"
+                        android:textColor="@color/black"
+                        android:layout_marginTop="12dp" />
+                </LinearLayout>
+            </com.google.android.material.card.MaterialCardView>
+        </LinearLayout>
+
+        <!-- Fila 2: Clientes y Reportes -->
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="0dp"
+            android:layout_weight="1"
+            android:orientation="horizontal"
+            android:layout_marginTop="6dp"
+            android:layout_marginBottom="24dp">
+
+            <!-- OpciÃ³n Clientes -->
+            <com.google.android.material.card.MaterialCardView
+                android:id="@+id/cardClientes"
+                android:layout_width="0dp"
+                android:layout_height="match_parent"
+                android:layout_weight="1"
+                android:layout_marginEnd="6dp"
+                android:clickable="true"
+                android:focusable="true"
+                app:cardCornerRadius="16dp"
+                app:cardElevation="2dp"
+                app:cardBackgroundColor="@color/white"
+                app:strokeWidth="0dp">
+
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="match_parent"
+                    android:orientation="vertical"
+                    android:gravity="center">
+
+                    <androidx.cardview.widget.CardView
+                        android:layout_width="48dp"
+                        android:layout_height="48dp"
+                        app:cardCornerRadius="24dp"
+                        app:cardElevation="0dp"
+                        app:cardBackgroundColor="@color/rosa_claro">
+
+                        <TextView
+                            android:layout_width="match_parent"
+                            android:layout_height="match_parent"
+                            android:gravity="center"
+                            android:text="C"
+                            android:textColor="@color/rosa_moda"
+                            android:textSize="20sp"
+                            android:textStyle="bold" />
+                    </androidx.cardview.widget.CardView>
+
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="@string/btn_clientes"
+                        android:textSize="16sp"
+                        android:textStyle="bold"
+                        android:textColor="@color/black"
+                        android:layout_marginTop="12dp" />
+                </LinearLayout>
+            </com.google.android.material.card.MaterialCardView>
+
+            <!-- OpciÃ³n Reportes -->
+            <com.google.android.material.card.MaterialCardView
+                android:id="@+id/cardReportes"
+                android:layout_width="0dp"
+                android:layout_height="match_parent"
+                android:layout_weight="1"
+                android:layout_marginStart="6dp"
+                android:clickable="true"
+                android:focusable="true"
+                app:cardCornerRadius="16dp"
+                app:cardElevation="2dp"
+                app:cardBackgroundColor="@color/white"
+                app:strokeWidth="0dp">
+
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="match_parent"
+                    android:orientation="vertical"
+                    android:gravity="center">
+
+                    <androidx.cardview.widget.CardView
+                        android:layout_width="48dp"
+                        android:layout_height="48dp"
+                        app:cardCornerRadius="24dp"
+                        app:cardElevation="0dp"
+                        app:cardBackgroundColor="@color/rosa_claro">
+
+                        <TextView
+                            android:layout_width="match_parent"
+                            android:layout_height="match_parent"
+                            android:gravity="center"
+                            android:text="R"
+                            android:textColor="@color/rosa_moda"
+                            android:textSize="20sp"
+                            android:textStyle="bold" />
+                    </androidx.cardview.widget.CardView>
+
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="@string/btn_reportes"
+                        android:textSize="16sp"
+                        android:textStyle="bold"
+                        android:textColor="@color/black"
+                        android:layout_marginTop="12dp" />
+                </LinearLayout>
+            </com.google.android.material.card.MaterialCardView>
+        </LinearLayout>
+    </LinearLayout>
+
+    <!-- BotÃ³n Salir -->
+    <com.google.android.material.button.MaterialButton
+        android:id="@+id/btnSalir"
+        android:layout_width="match_parent"
+        android:layout_height="55dp"
+        android:text="@string/btn_salir"
+        android:textSize="15sp"
+        style="@style/Widget.MaterialComponents.Button.OutlinedButton"
+        app:strokeColor="@color/rosa_moda"
+        android:textColor="@color/rosa_moda"
+        app:cornerRadius="28dp" />
+
+</LinearLayout>
+<?xml version="1.0" encoding="utf-8"?>
+<ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    xmlns:tools="http://schemas.android.com/tools"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="@color/white"
+    android:fillViewport="true"
+    tools:context=".RegistrarRopaActivity">
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="vertical"
+        android:padding="20dp">
+
+        <!-- TÃ­tulo superior -->
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="Nueva prenda"
+            android:textSize="22sp"
+            android:textStyle="bold"
+            android:textColor="@color/black"
+            android:layout_marginBottom="16dp" />
+
+        <!-- PrevisualizaciÃ³n de la foto -->
+        <com.google.android.material.card.MaterialCardView
+            android:layout_width="160dp"
+            android:layout_height="160dp"
+            android:layout_gravity="center_horizontal"
+            android:layout_marginBottom="8dp"
+            app:cardCornerRadius="16dp"
+            app:cardElevation="0dp"
+            app:strokeColor="@color/rosa_claro"
+            app:strokeWidth="2dp">
+
+            <ImageView
+                android:id="@+id/ivFotoPrenda"
+                android:layout_width="match_parent"
+                android:layout_height="match_parent"
+                android:padding="8dp"
+                android:scaleType="fitCenter"
+                android:src="@android:drawable/ic_menu_gallery"
+                android:contentDescription="PrevisualizaciÃ³n de la prenda" />
+        </com.google.android.material.card.MaterialCardView>
+
+        <!-- BotÃ³n Cambiar / Seleccionar Foto -->
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/btnSeleccionarFoto"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_gravity="center_horizontal"
+            android:text="Cambiar foto"
+            android:textSize="12sp"
+            style="@style/Widget.MaterialComponents.Button.OutlinedButton"
+            app:strokeColor="@color/rosa_moda"
+            android:textColor="@color/rosa_moda"
+            app:cornerRadius="20dp"
+            android:layout_marginBottom="20dp" />
+
+        <!-- Fila 1: CategorÃ­a y Talla -->
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:layout_marginBottom="12dp">
+
+            <LinearLayout
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:orientation="vertical"
+                android:layout_marginEnd="6dp">
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="CategorÃ­a"
+                    android:textSize="12sp"
+                    android:textColor="#757575"
+                    android:layout_marginBottom="4dp" />
+
+                <Spinner
+                    android:id="@+id/spCategoria"
+                    android:layout_width="match_parent"
+                    android:layout_height="50dp"
+                    android:padding="8dp" />
+            </LinearLayout>
+
+            <LinearLayout
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:orientation="vertical"
+                android:layout_marginStart="6dp">
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="Talla"
+                    android:textSize="12sp"
+                    android:textColor="#757575"
+                    android:layout_marginBottom="4dp" />
+
+                <Spinner
+                    android:id="@+id/spTalla"
+                    android:layout_width="match_parent"
+                    android:layout_height="50dp"
+                    android:padding="8dp" />
+            </LinearLayout>
+        </LinearLayout>
+
+        <!-- Fila 2: Modelo y Marca -->
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:layout_marginBottom="12dp">
+
+            <com.google.android.material.textfield.TextInputLayout
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:layout_marginEnd="6dp"
+                style="@style/Widget.MaterialComponents.TextInputLayout.OutlinedBox"
+                android:hint="Modelo">
+
+                <com.google.android.material.textfield.TextInputEditText
+                    android:id="@+id/etModelo"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:inputType="textCapWords" />
+            </com.google.android.material.textfield.TextInputLayout>
+
+            <com.google.android.material.textfield.TextInputLayout
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:layout_marginStart="6dp"
+                style="@style/Widget.MaterialComponents.TextInputLayout.OutlinedBox"
+                android:hint="Marca">
+
+                <com.google.android.material.textfield.TextInputEditText
+                    android:id="@+id/etMarca"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:inputType="textCapWords" />
+            </com.google.android.material.textfield.TextInputLayout>
+        </LinearLayout>
+
+        <!-- Fila 3: Color y Cantidad -->
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:layout_marginBottom="12dp">
+
+            <com.google.android.material.textfield.TextInputLayout
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:layout_marginEnd="6dp"
+                style="@style/Widget.MaterialComponents.TextInputLayout.OutlinedBox"
+                android:hint="Color">
+
+                <com.google.android.material.textfield.TextInputEditText
+                    android:id="@+id/etColor"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:inputType="textCapWords" />
+            </com.google.android.material.textfield.TextInputLayout>
+
+            <com.google.android.material.textfield.TextInputLayout
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:layout_marginStart="6dp"
+                style="@style/Widget.MaterialComponents.TextInputLayout.OutlinedBox"
+                android:hint="Cantidad">
+
+                <com.google.android.material.textfield.TextInputEditText
+                    android:id="@+id/etCantidad"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:inputType="number" />
+            </com.google.android.material.textfield.TextInputLayout>
+        </LinearLayout>
+
+        <!-- Campo Precio (S/) -->
+        <com.google.android.material.textfield.TextInputLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginBottom="24dp"
+            style="@style/Widget.MaterialComponents.TextInputLayout.OutlinedBox"
+            android:hint="Precio (S/)">
+
+            <com.google.android.material.textfield.TextInputEditText
+                android:id="@+id/etPrecio"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:inputType="numberDecimal" />
+        </com.google.android.material.textfield.TextInputLayout>
+
+        <!-- BotÃ³n Guardar -->
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/btnGuardarRopa"
+            android:layout_width="match_parent"
+            android:layout_height="55dp"
+            android:text="Guardar"
+            android:textSize="16sp"
+            app:backgroundTint="@color/rosa_moda"
+            app:cornerRadius="28dp" />
+
+    </LinearLayout>
+</ScrollView>
+<?xml version="1.0" encoding="utf-8"?>
+<com.google.android.material.card.MaterialCardView xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    xmlns:tools="http://schemas.android.com/tools"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:layout_marginHorizontal="16dp"
+    android:layout_marginVertical="6dp"
+    app:cardCornerRadius="14dp"
+    app:cardElevation="1dp"
+    app:cardBackgroundColor="@color/white"
+    app:strokeWidth="1dp"
+    app:strokeColor="#F0F0F0">
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:padding="12dp"
+        android:gravity="center_vertical">
+
+        <!-- Foto miniatura de la prenda -->
+        <com.google.android.material.card.MaterialCardView
+            android:layout_width="56dp"
+            android:layout_height="56dp"
+            app:cardCornerRadius="10dp"
+            app:cardElevation="0dp"
+            app:cardBackgroundColor="@color/fondo_gris"
+            app:strokeWidth="0dp">
+
+            <ImageView
+                android:id="@+id/ivFotoCarrito"
+                android:layout_width="match_parent"
+                android:layout_height="match_parent"
+                android:padding="4dp"
+                android:scaleType="fitCenter"
+                android:src="@android:drawable/ic_menu_gallery"
+                android:contentDescription="Miniatura de prenda" />
+        </com.google.android.material.card.MaterialCardView>
+
+        <!-- InformaciÃ³n: Nombre, Talla, Color y Cantidad -->
+        <LinearLayout
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:orientation="vertical"
+            android:layout_marginStart="12dp"
+            android:layout_marginEnd="8dp">
+
+            <TextView
+                android:id="@+id/tvModeloCarrito"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="Polo oversize Â· M"
+                android:textSize="14sp"
+                android:textStyle="bold"
+                android:textColor="@color/black"
+                android:maxLines="1"
+                android:ellipsize="end" />
+
+            <TextView
+                android:id="@+id/tvDetalleCarrito"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="Azul Â· 2 x S/ 39.90"
+                android:textSize="12sp"
+                android:textColor="#757575"
+                android:maxLines="1"
+                android:ellipsize="end"
+                android:layout_marginTop="2dp" />
+        </LinearLayout>
+
+        <!-- Subtotal acumulado de la prenda -->
+        <TextView
+            android:id="@+id/tvSubtotalCarrito"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="S/ 79.80"
+            android:textSize="14sp"
+            android:textStyle="bold"
+            android:textColor="@color/rosa_moda" />
+
+    </LinearLayout>
+</com.google.android.material.card.MaterialCardView>
+<?xml version="1.0" encoding="utf-8"?>
+<com.google.android.material.card.MaterialCardView xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:layout_marginVertical="6dp"
+    app:cardCornerRadius="12dp"
+    app:cardElevation="1dp"
+    app:strokeWidth="1dp"
+    app:strokeColor="#F0F0F0">
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:padding="12dp"
+        android:gravity="center_vertical">
+
+        <!-- Miniatura de la foto -->
+        <com.google.android.material.card.MaterialCardView
+            android:layout_width="50dp"
+            android:layout_height="50dp"
+            app:cardCornerRadius="8dp"
+            app:cardElevation="0dp"
+            app:cardBackgroundColor="@color/fondo_gris"
+            app:strokeWidth="0dp">
+
+            <ImageView
+                android:id="@+id/ivFotoGestion"
+                android:layout_width="match_parent"
+                android:layout_height="match_parent"
+                android:padding="4dp"
+                android:scaleType="fitCenter"
+                android:src="@android:drawable/ic_menu_gallery"
+                android:contentDescription="Foto prenda" />
+        </com.google.android.material.card.MaterialCardView>
+
+        <!-- InformaciÃ³n de la prenda -->
+        <LinearLayout
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:orientation="vertical"
+            android:layout_marginStart="12dp"
+            android:layout_marginEnd="8dp">
+
+            <TextView
+                android:id="@+id/tvModeloGestion"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="Polo Oversize"
+                android:textSize="15sp"
+                android:textStyle="bold"
+                android:textColor="@color/black" />
+
+            <TextView
+                android:id="@+id/tvDetalleGestion"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="Marca: Nike Â· Stock: 20"
+                android:textSize="12sp"
+                android:textColor="#757575" />
+
+            <TextView
+                android:id="@+id/tvPrecioGestion"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="S/ 45.00"
+                android:textSize="13sp"
+                android:textStyle="bold"
+                android:textColor="@color/rosa_moda" />
+        </LinearLayout>
+
+        <!-- BotÃ³n Editar -->
+        <ImageButton
+            android:id="@+id/btnEditarRopa"
+            android:layout_width="38dp"
+            android:layout_height="38dp"
+            android:background="?attr/selectableItemBackgroundBorderless"
+            android:src="@android:drawable/ic_menu_edit"
+            app:tint="@color/rosa_moda"
+            android:contentDescription="Editar" />
+
+        <!-- BotÃ³n Eliminar -->
+        <ImageButton
+            android:id="@+id/btnEliminarRopa"
+            android:layout_width="38dp"
+            android:layout_height="38dp"
+            android:background="?attr/selectableItemBackgroundBorderless"
+            android:src="@android:drawable/ic_menu_delete"
+            app:tint="#D32F2F"
+            android:contentDescription="Eliminar" />
+
+    </LinearLayout>
+</com.google.android.material.card.MaterialCardView>
+<?xml version="1.0" encoding="utf-8"?>
+<com.google.android.material.card.MaterialCardView xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    xmlns:tools="http://schemas.android.com/tools"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:layout_margin="6dp"
+    app:cardCornerRadius="16dp"
+    app:cardElevation="2dp"
+    app:cardBackgroundColor="@color/white"
+    app:strokeWidth="0dp">
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="vertical"
+        android:padding="10dp">
+
+        <!-- Foto de la prenda alineada y sin deformaciones -->
+        <com.google.android.material.card.MaterialCardView
+            android:layout_width="match_parent"
+            android:layout_height="140dp"
+            app:cardCornerRadius="12dp"
+            app:cardElevation="0dp"
+            app:cardBackgroundColor="@color/fondo_gris"
+            app:strokeWidth="0dp">
+
+            <ImageView
+                android:id="@+id/ivFotoItem"
+                android:layout_width="match_parent"
+                android:layout_height="match_parent"
+                android:padding="6dp"
+                android:scaleType="fitCenter"
+                android:src="@android:drawable/ic_menu_gallery"
+                android:contentDescription="Foto de la prenda" />
+        </com.google.android.material.card.MaterialCardView>
+
+        <!-- Modelo de la prenda -->
+        <TextView
+            android:id="@+id/tvModeloItem"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="Polo oversize"
+            android:textSize="15sp"
+            android:textStyle="bold"
+            android:textColor="@color/black"
+            android:maxLines="1"
+            android:ellipsize="end"
+            android:layout_marginTop="8dp" />
+
+        <!-- Talla y Color -->
+        <TextView
+            android:id="@+id/tvDetalleItem"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="Talla M Â· Azul"
+            android:textSize="12sp"
+            android:textColor="#757575"
+            android:maxLines="1"
+            android:ellipsize="end"
+            android:layout_marginTop="2dp" />
+
+        <!-- Fila de Precio y BotÃ³n (+) -->
+        <RelativeLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="8dp">
+
+            <TextView
+                android:id="@+id/tvPrecioItem"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_centerVertical="true"
+                android:text="S/ 39.90"
+                android:textSize="15sp"
+                android:textStyle="bold"
+                android:textColor="@color/rosa_moda" />
+
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/btnAgregarItem"
+                android:layout_width="36dp"
+                android:layout_height="36dp"
+                android:layout_alignParentEnd="true"
+                android:text="+"
+                android:textSize="18sp"
+                android:padding="0dp"
+                android:insetLeft="0dp"
+                android:insetTop="0dp"
+                android:insetRight="0dp"
+                android:insetBottom="0dp"
+                app:backgroundTint="@color/rosa_moda"
+                app:cornerRadius="18dp" />
+        </RelativeLayout>
+
+    </LinearLayout>
+</com.google.android.material.card.MaterialCardView>
 <?xml version="1.0" encoding="utf-8"?>
 <adaptive-icon xmlns:android="http://schemas.android.com/apk/res/android">
-    <background android:drawable="@drawable/ic_launcher_background" />
-    <foreground android:drawable="@drawable/ic_launcher_foreground" />
-    <monochrome android:drawable="@drawable/ic_launcher_foreground" />
+    <background android:drawable="@color/ic_launcher_background"/>
+    <foreground android:drawable="@mipmap/ic_launcher_foreground"/>
+    <monochrome android:drawable="@mipmap/ic_launcher_foreground"/>
 </adaptive-icon>
 <?xml version="1.0" encoding="utf-8"?>
 <adaptive-icon xmlns:android="http://schemas.android.com/apk/res/android">
-    <background android:drawable="@drawable/ic_launcher_background" />
-    <foreground android:drawable="@drawable/ic_launcher_foreground" />
-    <monochrome android:drawable="@drawable/ic_launcher_foreground" />
+    <background android:drawable="@color/ic_launcher_background"/>
+    <foreground android:drawable="@mipmap/ic_launcher_foreground"/>
+    <monochrome android:drawable="@mipmap/ic_launcher_foreground"/>
 </adaptive-icon>
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <color name="black">#FF000000</color>
     <color name="white">#FFFFFFFF</color>
+
+    <!-- Identidad visual Boutique Moda Urbana (HU-03) -->
+    <color name="rosa_moda">#C2185B</color>
+    <color name="rosa_oscuro">#880E4F</color>
+    <color name="rosa_claro">#F8BBD0</color>
+    <color name="negro_moda">#212121</color>
+    <color name="fondo_gris">#F5F5F5</color>
 </resources>
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="ic_launcher_background">#EFEFEF</color>
+</resources>
+<?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="app_name">ModaApp</string>
+
+    <!-- Textos para el Login y Acceso (HU-01) -->
+    <string name="subtitle_login">Boutique Moda Urbana</string>
+    <string name="hint_usuario">Usuario</string>
+    <string name="hint_contrasena">ContraseÃ±a</string>
+    <string name="btn_ingresar_admin">Ingresar como administrador</string>
+    <string name="btn_ver_catalogo">Ver catÃ¡logo (cliente)</string>
+    <string name="txt_prueba_admin">Prueba: admin / 1234</string>
+
+    <!-- Mensajes de error (HU-01) -->
+    <string name="error_campo_vacio">Campo requerido</string>
+    <string name="error_credenciales">Credenciales incorrectas</string>
+
+    <!-- MenÃº del Administrador (HU-02) -->
+    <string name="titulo_bienvenida">Hola, %1$s</string>
+    <string name="btn_ropa">Ropa</string>
+    <string name="btn_pedidos">Pedidos</string>
+    <string name="btn_clientes">Clientes</string>
+    <string name="btn_reportes">Reportes</string>
+    <string name="btn_salir">Salir</string>
+
+    <!-- CatÃ¡logo y Carrito (HU-02) -->
+    <string name="titulo_catalogo">CatÃ¡logo</string>
+    <string name="titulo_carrito">Mi carrito</string>
 </resources>
 <resources xmlns:tools="http://schemas.android.com/tools">
-    <!-- Base application theme. -->
+    <!-- Tema base de ModaApp usando Material3 sin ActionBar -->
     <style name="Base.Theme.ModaApp" parent="Theme.Material3.DayNight.NoActionBar">
-        <!-- Customize your light theme here. -->
-        <!-- <item name="colorPrimary">@color/my_light_primary</item> -->
+        <!-- Color principal de la marca (Rosa) -->
+        <item name="colorPrimary">@color/rosa_moda</item>
+        <item name="colorOnPrimary">@color/white</item>
+
+        <!-- Color de la barra de estado superior -->
+        <item name="android:statusBarColor">@color/rosa_oscuro</item>
     </style>
 
     <style name="Theme.ModaApp" parent="Base.Theme.ModaApp" />
 </resources>
 <resources xmlns:tools="http://schemas.android.com/tools">
-    <!-- Base application theme. -->
+    <!-- Tema base de ModaApp para modo oscuro -->
     <style name="Base.Theme.ModaApp" parent="Theme.Material3.DayNight.NoActionBar">
-        <!-- Customize your dark theme here. -->
-        <!-- <item name="colorPrimary">@color/my_dark_primary</item> -->
+        <!-- Color principal de la marca (Rosa) -->
+        <item name="colorPrimary">@color/rosa_moda</item>
+        <item name="colorOnPrimary">@color/white</item>
+
+        <!-- Color de la barra de estado superior -->
+        <item name="android:statusBarColor">@color/rosa_oscuro</item>
     </style>
+
+    <style name="Theme.ModaApp" parent="Base.Theme.ModaApp" />
 </resources>
 <?xml version="1.0" encoding="utf-8"?><!--
    Sample backup rules file; uncomment and customize as necessary.
@@ -342,16 +2478,42 @@ class MainActivity : AppCompatActivity() {
         android:roundIcon="@mipmap/ic_launcher_round"
         android:supportsRtl="true"
         android:theme="@style/Theme.ModaApp">
+
+        <!-- Pantalla Principal de Login -->
         <activity
             android:name=".MainActivity"
             android:exported="true"
             android:windowSoftInputMode="adjustResize">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
-
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
+
+        <!-- MenÃº del Administrador -->
+        <activity
+            android:name=".MenuActivity"
+            android:exported="false"
+            android:windowSoftInputMode="adjustResize" />
+
+        <!-- Formulario para Registrar Ropa -->
+        <activity
+            android:name=".RegistrarRopaActivity"
+            android:exported="false"
+            android:windowSoftInputMode="adjustResize" />
+
+        <!-- CatÃ¡logo del Cliente -->
+        <activity
+            android:name=".CatalogoActivity"
+            android:exported="false"
+            android:windowSoftInputMode="adjustResize" />
+
+        <!-- Carrito del Cliente -->
+        <activity
+            android:name=".CarritoActivity"
+            android:exported="false"
+            android:windowSoftInputMode="adjustResize" />
+
     </application>
 
 </manifest>

@@ -8,7 +8,7 @@ class DBHelper(context: Context) : SQLiteOpenHelper(context, DB_NAME, null, DB_V
 
     companion object {
         const val DB_NAME = "modaapp.db"
-        const val DB_VERSION = 1
+        const val DB_VERSION = 2
     }
 
     override fun onCreate(db: SQLiteDatabase) {
@@ -46,6 +46,28 @@ class DBHelper(context: Context) : SQLiteOpenHelper(context, DB_NAME, null, DB_V
             )
         """.trimIndent())
 
+        // Tabla de Pedidos (HU-09)
+        db.execSQL("""
+            CREATE TABLE pedido (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                id_usuario INTEGER REFERENCES usuario(id),
+                fecha TEXT,
+                total REAL,
+                estado TEXT
+            )
+        """.trimIndent())
+
+        // Tabla Detalle de Pedido (HU-09)
+        db.execSQL("""
+            CREATE TABLE detalle_pedido (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                id_pedido INTEGER REFERENCES pedido(id),
+                id_ropa INTEGER REFERENCES ropa(id),
+                cantidad INTEGER,
+                precio_unitario REAL
+            )
+        """.trimIndent())
+
         // Insertar usuario administrador por defecto (HU-04)
         db.execSQL("INSERT INTO usuario (usuario, clave, rol, telefono) VALUES ('admin', '1234', 'ADMIN', '987654321')")
 
@@ -58,7 +80,27 @@ class DBHelper(context: Context) : SQLiteOpenHelper(context, DB_NAME, null, DB_V
     }
 
     override fun onUpgrade(db: SQLiteDatabase, oldVersion: Int, newVersion: Int) {
-        // Las migraciones de tablas para pedidos se gestionarán en el Sprint 3 (DB_VERSION = 2)
+        if (oldVersion < 2) {
+            db.execSQL("""
+                CREATE TABLE IF NOT EXISTS pedido (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    id_usuario INTEGER REFERENCES usuario(id),
+                    fecha TEXT,
+                    total REAL,
+                    estado TEXT
+                )
+            """.trimIndent())
+
+            db.execSQL("""
+                CREATE TABLE IF NOT EXISTS detalle_pedido (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    id_pedido INTEGER REFERENCES pedido(id),
+                    id_ropa INTEGER REFERENCES ropa(id),
+                    cantidad INTEGER,
+                    precio_unitario REAL
+                )
+            """.trimIndent())
+        }
     }
 
     override fun onConfigure(db: SQLiteDatabase) {
