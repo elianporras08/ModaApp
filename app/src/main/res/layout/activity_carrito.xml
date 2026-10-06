@@ -5,7 +5,10 @@
     android:layout_width="match_parent"
     android:layout_height="match_parent"
     android:orientation="vertical"
-    android:padding="20dp"
+    android:paddingStart="20dp"
+    android:paddingEnd="20dp"
+    android:paddingTop="36dp"
+    android:paddingBottom="20dp"
     android:background="@color/fondo_gris"
     tools:context=".CarritoActivity">
 
@@ -18,7 +21,6 @@
         android:textColor="@color/black"
         android:layout_marginBottom="16dp" />
 
-    <!-- Lista de prendas en el carrito -->
     <androidx.recyclerview.widget.RecyclerView
         android:id="@+id/recyclerCarrito"
         android:layout_width="match_parent"
@@ -26,12 +28,11 @@
         android:layout_weight="1"
         android:layout_marginBottom="16dp" />
 
-    <!-- Sección de Total -->
     <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:orientation="horizontal"
-        android:layout_marginBottom="20dp">
+        android:layout_marginBottom="16dp">
 
         <TextView
             android:layout_width="0dp"
@@ -52,7 +53,6 @@
             android:textColor="@color/rosa_moda" />
     </LinearLayout>
 
-    <!-- Botón Hacer Pedido -->
     <com.google.android.material.button.MaterialButton
         android:id="@+id/btnHacerPedido"
         android:layout_width="match_parent"

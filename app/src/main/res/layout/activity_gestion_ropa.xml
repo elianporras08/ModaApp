@@ -6,10 +6,12 @@
     android:layout_height="match_parent"
     android:orientation="vertical"
     android:background="@color/white"
-    android:padding="16dp"
+    android:paddingStart="16dp"
+    android:paddingEnd="16dp"
+    android:paddingTop="36dp"
+    android:paddingBottom="16dp"
     tools:context=".GestionRopaActivity">
 
-    <!-- Encabezado con título y botón para agregar prenda -->
     <RelativeLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
@@ -36,7 +38,6 @@
             app:cornerRadius="18dp" />
     </RelativeLayout>
 
-    <!-- Campo de búsqueda en tiempo real (HU-07) -->
     <com.google.android.material.textfield.TextInputLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
@@ -52,7 +53,6 @@
             android:inputType="text" />
     </com.google.android.material.textfield.TextInputLayout>
 
-    <!-- RecyclerView con las prendas registradas -->
     <androidx.recyclerview.widget.RecyclerView
         android:id="@+id/rvGestionRopa"
         android:layout_width="match_parent"

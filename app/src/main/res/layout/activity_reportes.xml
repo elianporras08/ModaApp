@@ -12,9 +12,11 @@
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:orientation="vertical"
-        android:padding="20dp">
+        android:paddingStart="20dp"
+        android:paddingEnd="20dp"
+        android:paddingTop="36dp"
+        android:paddingBottom="20dp">
 
-        <!-- Título superior -->
         <TextView
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
@@ -24,7 +26,6 @@
             android:textColor="@color/black"
             android:layout_marginBottom="20dp" />
 
-        <!-- Tarjeta: Monto Total de Ventas Atendidas -->
         <com.google.android.material.card.MaterialCardView
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
@@ -59,7 +60,6 @@
             </LinearLayout>
         </com.google.android.material.card.MaterialCardView>
 
-        <!-- Tarjeta: Cantidad de Pedidos Atendidos -->
         <com.google.android.material.card.MaterialCardView
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
@@ -94,7 +94,6 @@
             </LinearLayout>
         </com.google.android.material.card.MaterialCardView>
 
-        <!-- Subtítulo Stock Crítico -->
         <TextView
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
@@ -104,7 +103,6 @@
             android:textColor="@color/black"
             android:layout_marginBottom="12dp" />
 
-        <!-- Lista de prendas con stock crítico -->
         <androidx.recyclerview.widget.RecyclerView
             android:id="@+id/rvStockCritico"
             android:layout_width="match_parent"

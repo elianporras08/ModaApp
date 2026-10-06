@@ -11,7 +11,10 @@
         android:layout_width="match_parent"
         android:layout_height="match_parent"
         android:orientation="vertical"
-        android:padding="16dp">
+        android:paddingStart="16dp"
+        android:paddingEnd="16dp"
+        android:paddingTop="36dp"
+        android:paddingBottom="16dp">
 
         <!-- Encabezado con Botón del Carrito -->
         <RelativeLayout
@@ -22,12 +25,12 @@
             <TextView
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
+                android:layout_centerVertical="true"
                 android:text="@string/titulo_catalogo"
                 android:textSize="22sp"
                 android:textStyle="bold"
                 android:textColor="@color/black" />
 
-            <!-- Botón de Carrito (Prototipo P2-04) -->
             <com.google.android.material.button.MaterialButton
                 android:id="@+id/btnVerCarrito"
                 android:layout_width="wrap_content"
@@ -39,12 +42,12 @@
                 app:cornerRadius="20dp" />
         </RelativeLayout>
 
-        <!-- Filtros por Categoría (Prototipo P2-04) -->
+        <!-- Filtros por Categoría -->
         <HorizontalScrollView
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:scrollbars="none"
-            android:layout_marginBottom="16dp">
+            android:layout_marginBottom="12dp">
 
             <com.google.android.material.chip.ChipGroup
                 android:id="@+id/chipGroupCategorias"
@@ -84,7 +87,7 @@
             </com.google.android.material.chip.ChipGroup>
         </HorizontalScrollView>
 
-        <!-- Grilla de prendas en el catálogo -->
+        <!-- Grilla de prendas -->
         <androidx.recyclerview.widget.RecyclerView
             android:id="@+id/recyclerCatalogo"
             android:layout_width="match_parent"

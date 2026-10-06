@@ -5,7 +5,10 @@
     android:layout_width="match_parent"
     android:layout_height="match_parent"
     android:orientation="vertical"
-    android:padding="20dp"
+    android:paddingStart="20dp"
+    android:paddingEnd="20dp"
+    android:paddingTop="36dp"
+    android:paddingBottom="20dp"
     android:background="@color/fondo_gris"
     tools:context=".MenuActivity">
 
@@ -13,7 +16,7 @@
     <RelativeLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:layout_marginBottom="20dp">
+        android:layout_marginBottom="16dp">
 
         <TextView
             android:layout_width="wrap_content"
@@ -24,10 +27,10 @@
             android:textColor="@color/black" />
 
         <androidx.cardview.widget.CardView
-            android:layout_width="36dp"
-            android:layout_height="36dp"
+            android:layout_width="38dp"
+            android:layout_height="38dp"
             android:layout_alignParentEnd="true"
-            app:cardCornerRadius="18dp"
+            app:cardCornerRadius="19dp"
             app:cardElevation="0dp"
             app:cardBackgroundColor="@color/rosa_claro">
 
@@ -59,16 +62,16 @@
         android:text="Panel de administración"
         android:textSize="14sp"
         android:textColor="@color/rosa_moda"
-        android:layout_marginBottom="24dp" />
+        android:layout_marginBottom="20dp" />
 
-    <!-- Cuadrícula 2x2 de Opciones (Prototipo P2-02) -->
+    <!-- Cuadrícula 2x2 de Opciones -->
     <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="0dp"
         android:layout_weight="1"
         android:orientation="vertical">
 
-        <!-- Fila 1: Ropa y Pedidos -->
+        <!-- Fila 1 -->
         <LinearLayout
             android:layout_width="match_parent"
             android:layout_height="0dp"
@@ -76,7 +79,6 @@
             android:orientation="horizontal"
             android:layout_marginBottom="12dp">
 
-            <!-- Opción Ropa -->
             <com.google.android.material.card.MaterialCardView
                 android:id="@+id/cardRopa"
                 android:layout_width="0dp"
@@ -124,7 +126,6 @@
                 </LinearLayout>
             </com.google.android.material.card.MaterialCardView>
 
-            <!-- Opción Pedidos -->
             <com.google.android.material.card.MaterialCardView
                 android:id="@+id/cardPedidos"
                 android:layout_width="0dp"
@@ -173,16 +174,15 @@
             </com.google.android.material.card.MaterialCardView>
         </LinearLayout>
 
-        <!-- Fila 2: Clientes y Reportes -->
+        <!-- Fila 2 -->
         <LinearLayout
             android:layout_width="match_parent"
             android:layout_height="0dp"
             android:layout_weight="1"
             android:orientation="horizontal"
             android:layout_marginTop="6dp"
-            android:layout_marginBottom="24dp">
+            android:layout_marginBottom="20dp">
 
-            <!-- Opción Clientes -->
             <com.google.android.material.card.MaterialCardView
                 android:id="@+id/cardClientes"
                 android:layout_width="0dp"
@@ -230,7 +230,6 @@
                 </LinearLayout>
             </com.google.android.material.card.MaterialCardView>
 
-            <!-- Opción Reportes -->
             <com.google.android.material.card.MaterialCardView
                 android:id="@+id/cardReportes"
                 android:layout_width="0dp"

@@ -307,6 +307,94 @@ data class Categoria(
 )
 package com.senati.modaapp
 
+import android.os.Bundle
+import androidx.appcompat.app.AppCompatActivity
+import androidx.recyclerview.widget.LinearLayoutManager
+import com.senati.modaapp.databinding.ActivityClientesBinding
+
+class ClientesActivity : AppCompatActivity() {
+
+    private lateinit var binding: ActivityClientesBinding
+    private lateinit var pedidoDao: PedidoDao
+    private lateinit var adapter: ClientesAdapter
+
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+
+        binding = ActivityClientesBinding.inflate(layoutInflater)
+        setContentView(binding.root)
+
+        pedidoDao = PedidoDao(this)
+
+        configurarRecyclerView()
+        cargarClientes()
+    }
+
+    override fun onResume() {
+        super.onResume()
+        cargarClientes()
+    }
+
+    private fun configurarRecyclerView() {
+        binding.rvClientes.layoutManager = LinearLayoutManager(this)
+
+        adapter = ClientesAdapter(emptyList())
+        binding.rvClientes.adapter = adapter
+    }
+
+    private fun cargarClientes() {
+        val lista = pedidoDao.obtenerClientesConPedidos()
+        adapter.actualizarLista(lista)
+    }
+}
+package com.senati.modaapp
+
+import android.view.LayoutInflater
+import android.view.ViewGroup
+import androidx.recyclerview.widget.RecyclerView
+import com.senati.modaapp.databinding.ItemClienteBinding
+
+class ClientesAdapter(
+    private var listaClientes: List<ClienteItem>
+) : RecyclerView.Adapter<ClientesAdapter.ClientesViewHolder>() {
+
+    inner class ClientesViewHolder(val binding: ItemClienteBinding) :
+        RecyclerView.ViewHolder(binding.root)
+
+    override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): ClientesViewHolder {
+        val binding = ItemClienteBinding.inflate(
+            LayoutInflater.from(parent.context),
+            parent,
+            false
+        )
+        return ClientesViewHolder(binding)
+    }
+
+    override fun onBindViewHolder(holder: ClientesViewHolder, position: Int) {
+        val cliente = listaClientes[position]
+        val binding = holder.binding
+
+        binding.tvNombreCliente.text = cliente.nombre
+        binding.tvTelefonoCliente.text = "TelÃ©fono: ${cliente.telefono}"
+        binding.tvCantPedidosCliente.text = "${cliente.totalPedidos} pedidos"
+
+        // Mostrar la inicial del cliente en el Ã­cono circular
+        binding.tvInicialCliente.text = if (cliente.nombre.isNotEmpty()) {
+            cliente.nombre.substring(0, 1).uppercase()
+        } else {
+            "C"
+        }
+    }
+
+    override fun getItemCount(): Int = listaClientes.size
+
+    fun actualizarLista(nuevaLista: List<ClienteItem>) {
+        listaClientes = nuevaLista
+        notifyDataSetChanged()
+    }
+}
+package com.senati.modaapp
+
 import android.content.Context
 import android.database.sqlite.SQLiteDatabase
 import android.database.sqlite.SQLiteOpenHelper
@@ -315,7 +403,7 @@ class DBHelper(context: Context) : SQLiteOpenHelper(context, DB_NAME, null, DB_V
 
     companion object {
         const val DB_NAME = "modaapp.db"
-        const val DB_VERSION = 1
+        const val DB_VERSION = 2
     }
 
     override fun onCreate(db: SQLiteDatabase) {
@@ -353,6 +441,28 @@ class DBHelper(context: Context) : SQLiteOpenHelper(context, DB_NAME, null, DB_V
             )
         """.trimIndent())
 
+        // Tabla de Pedidos (HU-09)
+        db.execSQL("""
+            CREATE TABLE pedido (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                id_usuario INTEGER REFERENCES usuario(id),
+                fecha TEXT,
+                total REAL,
+                estado TEXT
+            )
+        """.trimIndent())
+
+        // Tabla Detalle de Pedido (HU-09)
+        db.execSQL("""
+            CREATE TABLE detalle_pedido (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                id_pedido INTEGER REFERENCES pedido(id),
+                id_ropa INTEGER REFERENCES ropa(id),
+                cantidad INTEGER,
+                precio_unitario REAL
+            )
+        """.trimIndent())
+
         // Insertar usuario administrador por defecto (HU-04)
         db.execSQL("INSERT INTO usuario (usuario, clave, rol, telefono) VALUES ('admin', '1234', 'ADMIN', '987654321')")
 
@@ -365,7 +475,27 @@ class DBHelper(context: Context) : SQLiteOpenHelper(context, DB_NAME, null, DB_V
     }
 
     override fun onUpgrade(db: SQLiteDatabase, oldVersion: Int, newVersion: Int) {
-        // Las migraciones de tablas para pedidos se gestionarÃ¡n en el Sprint 3 (DB_VERSION = 2)
+        if (oldVersion < 2) {
+            db.execSQL("""
+                CREATE TABLE IF NOT EXISTS pedido (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    id_usuario INTEGER REFERENCES usuario(id),
+                    fecha TEXT,
+                    total REAL,
+                    estado TEXT
+                )
+            """.trimIndent())
+
+            db.execSQL("""
+                CREATE TABLE IF NOT EXISTS detalle_pedido (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    id_pedido INTEGER REFERENCES pedido(id),
+                    id_ropa INTEGER REFERENCES ropa(id),
+                    cantidad INTEGER,
+                    precio_unitario REAL
+                )
+            """.trimIndent())
+        }
     }
 
     override fun onConfigure(db: SQLiteDatabase) {
@@ -375,6 +505,7 @@ class DBHelper(context: Context) : SQLiteOpenHelper(context, DB_NAME, null, DB_V
 }
 package com.senati.modaapp
 
+import android.content.Intent
 import android.os.Bundle
 import android.text.Editable
 import android.text.TextWatcher
@@ -400,11 +531,16 @@ class GestionRopaActivity : AppCompatActivity() {
 
         configurarRecyclerView()
         configurarBuscador()
+
+        binding.btnNuevaPrenda.setOnClickListener {
+            val intent = Intent(this, RegistrarRopaActivity::class.java)
+            startActivity(intent)
+        }
     }
 
     override fun onResume() {
         super.onResume()
-        cargarPrendas("")
+        cargarPrendas(binding.etBuscarRopa.text.toString().trim())
     }
 
     private fun configurarRecyclerView() {
@@ -413,7 +549,11 @@ class GestionRopaActivity : AppCompatActivity() {
         adapter = GestionRopaAdapter(
             listaRopa = emptyList(),
             onEditarClick = { ropa ->
-                Toast.makeText(this, "Editar: ${ropa.modelo}", Toast.LENGTH_SHORT).show()
+                // Abrir RegistrarRopaActivity en modo ediciÃ³n (HU-07)
+                val intent = Intent(this, RegistrarRopaActivity::class.java).apply {
+                    putExtra("EXTRA_ROPA_ID", ropa.id)
+                }
+                startActivity(intent)
             },
             onEliminarClick = { ropa ->
                 confirmarEliminacion(ropa)
@@ -524,6 +664,7 @@ data class ItemCarrito(
 }
 package com.senati.modaapp
 
+import android.content.Context
 import android.content.Intent
 import android.os.Bundle
 import android.widget.Toast
@@ -538,12 +679,21 @@ class MainActivity : AppCompatActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
+        // Verificar si existe una sesiÃ³n activa recordada (HU-13)
+        val prefs = getSharedPreferences("SesionModaApp", Context.MODE_PRIVATE)
+        val usuarioGuardado = prefs.getString("KEY_USUARIO", null)
+
+        if (usuarioGuardado != null) {
+            abrirMenu(usuarioGuardado)
+            return
+        }
+
         binding = ActivityMainBinding.inflate(layoutInflater)
         setContentView(binding.root)
 
         usuarioDao = UsuarioDao(this)
 
-        // BotÃ³n Ingresar como Administrador (HU-04, CA2, CA3)
+        // BotÃ³n Ingresar como Administrador (HU-04)
         binding.btnIngresarAdmin.setOnClickListener {
             val usuarioInput = binding.etUsuario.text.toString().trim()
             val claveInput = binding.etClave.text.toString().trim()
@@ -565,33 +715,38 @@ class MainActivity : AppCompatActivity() {
             }
 
             if (isValid) {
-                // ValidaciÃ³n real consultando la tabla usuario de modaapp.db (HU-04)
                 val usuarioLogueado = usuarioDao.validarUsuario(usuarioInput, claveInput)
 
                 if (usuarioLogueado != null) {
+                    // Guardar sesiÃ³n activa (HU-13)
+                    prefs.edit().putString("KEY_USUARIO", usuarioLogueado.usuario).apply()
+
                     Toast.makeText(this, "Bienvenido ${usuarioLogueado.usuario}", Toast.LENGTH_SHORT).show()
-                    val intent = Intent(this, MenuActivity::class.java).apply {
-                        putExtra("EXTRA_USUARIO", usuarioLogueado.usuario)
-                        putExtra("EXTRA_ROL", usuarioLogueado.rol)
-                    }
-                    startActivity(intent)
-                    finish()
+                    abrirMenu(usuarioLogueado.usuario)
                 } else {
-                    // Credenciales incorrectas (CA3)
                     Toast.makeText(this, getString(R.string.error_credenciales), Toast.LENGTH_SHORT).show()
                 }
             }
         }
 
-        // BotÃ³n Ver catÃ¡logo como cliente (HU-01, CA5)
+        // BotÃ³n Ver catÃ¡logo como cliente (HU-01)
         binding.btnVerCatalogo.setOnClickListener {
             val intent = Intent(this, CatalogoActivity::class.java)
             startActivity(intent)
         }
     }
+
+    private fun abrirMenu(usuario: String) {
+        val intent = Intent(this, MenuActivity::class.java).apply {
+            putExtra("EXTRA_USUARIO", usuario)
+        }
+        startActivity(intent)
+        finish()
+    }
 }
 package com.senati.modaapp
 
+import android.content.Context
 import android.content.Intent
 import android.os.Bundle
 import androidx.appcompat.app.AppCompatActivity
@@ -610,18 +765,31 @@ class MenuActivity : AppCompatActivity() {
         val usuario = intent.getStringExtra("EXTRA_USUARIO") ?: "admin"
         binding.tvBienvenida.text = "Hola, $usuario"
 
-        // Abrir formulario para registrar prenda (HU-05)
         binding.cardRopa.setOnClickListener {
-            val intent = Intent(this, RegistrarRopaActivity::class.java)
+            val intent = Intent(this, GestionRopaActivity::class.java)
             startActivity(intent)
         }
 
-        binding.cardPedidos.setOnClickListener { }
-        binding.cardClientes.setOnClickListener { }
-        binding.cardReportes.setOnClickListener { }
+        binding.cardPedidos.setOnClickListener {
+            val intent = Intent(this, PedidosActivity::class.java)
+            startActivity(intent)
+        }
 
-        // BotÃ³n Salir (HU-02, CA3)
+        binding.cardClientes.setOnClickListener {
+            val intent = Intent(this, ClientesActivity::class.java)
+            startActivity(intent)
+        }
+
+        binding.cardReportes.setOnClickListener {
+            val intent = Intent(this, ReportesActivity::class.java)
+            startActivity(intent)
+        }
+
+        // BotÃ³n Salir: Limpiar sesiÃ³n guardada (HU-13)
         binding.btnSalir.setOnClickListener {
+            val prefs = getSharedPreferences("SesionModaApp", Context.MODE_PRIVATE)
+            prefs.edit().clear().apply()
+
             val intent = Intent(this, MainActivity::class.java)
             startActivity(intent)
             finish()
@@ -635,6 +803,21 @@ import android.content.Context
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
+
+data class PedidoItem(
+    val id: Int,
+    val idUsuario: Int,
+    val fecha: String,
+    val total: Double,
+    val estado: String
+)
+
+data class ClienteItem(
+    val id: Int,
+    val nombre: String,
+    val telefono: String,
+    val totalPedidos: Int
+)
 
 class PedidoDao(context: Context) {
 
@@ -651,7 +834,7 @@ class PedidoDao(context: Context) {
                 put("id_usuario", idUsuario)
                 put("fecha", fechaActual)
                 put("total", total)
-                put("estado", "Pendiente")
+                put("estado", "PENDIENTE")
             }
 
             val idPedido = db.insert("pedido", null, valuesPedido)
@@ -660,7 +843,6 @@ class PedidoDao(context: Context) {
                 return false
             }
 
-            // Insertar el detalle de cada prenda en el pedido
             for (item in items) {
                 val valuesDetalle = ContentValues().apply {
                     put("id_pedido", idPedido)
@@ -681,6 +863,279 @@ class PedidoDao(context: Context) {
             db.close()
         }
     }
+
+    fun listarPorEstado(estado: String): List<PedidoItem> {
+        val lista = mutableListOf<PedidoItem>()
+        val db = dbHelper.readableDatabase
+        val cursor = db.rawQuery(
+            "SELECT * FROM pedido WHERE estado = ? ORDER BY id DESC",
+            arrayOf(estado)
+        )
+
+        if (cursor.moveToFirst()) {
+            do {
+                lista.add(
+                    PedidoItem(
+                        id = cursor.getInt(cursor.getColumnIndexOrThrow("id")),
+                        idUsuario = cursor.getInt(cursor.getColumnIndexOrThrow("id_usuario")),
+                        fecha = cursor.getString(cursor.getColumnIndexOrThrow("fecha")),
+                        total = cursor.getDouble(cursor.getColumnIndexOrThrow("total")),
+                        estado = cursor.getString(cursor.getColumnIndexOrThrow("estado"))
+                    )
+                )
+            } while (cursor.moveToNext())
+        }
+        cursor.close()
+        db.close()
+        return lista
+    }
+
+    fun atenderPedido(idPedido: Int): Boolean {
+        val db = dbHelper.writableDatabase
+        db.beginTransaction()
+
+        return try {
+            val cursorDetalle = db.rawQuery(
+                "SELECT id_ropa, cantidad FROM detalle_pedido WHERE id_pedido = ?",
+                arrayOf(idPedido.toString())
+            )
+
+            if (cursorDetalle.moveToFirst()) {
+                do {
+                    val idRopa = cursorDetalle.getInt(cursorDetalle.getColumnIndexOrThrow("id_ropa"))
+                    val cantComprada = cursorDetalle.getInt(cursorDetalle.getColumnIndexOrThrow("cantidad"))
+
+                    db.execSQL(
+                        "UPDATE ropa SET cantidad = cantidad - ? WHERE id = ? AND cantidad >= ?",
+                        arrayOf(cantComprada, idRopa, cantComprada)
+                    )
+                } while (cursorDetalle.moveToNext())
+            }
+            cursorDetalle.close()
+
+            val values = ContentValues().apply {
+                put("estado", "ATENDIDO")
+            }
+            val actualizados = db.update("pedido", values, "id = ?", arrayOf(idPedido.toString()))
+
+            if (actualizados > 0) {
+                db.setTransactionSuccessful()
+                true
+            } else {
+                false
+            }
+        } catch (e: Exception) {
+            e.printStackTrace()
+            false
+        } finally {
+            db.endTransaction()
+            db.close()
+        }
+    }
+
+    fun obtenerTotalVentasAtendidas(): Double {
+        var total = 0.0
+        val db = dbHelper.readableDatabase
+        val cursor = db.rawQuery("SELECT SUM(total) FROM pedido WHERE estado = 'ATENDIDO'", null)
+        if (cursor.moveToFirst()) {
+            total = cursor.getDouble(0)
+        }
+        cursor.close()
+        db.close()
+        return total
+    }
+
+    fun obtenerCantidadPedidosAtendidos(): Int {
+        var cantidad = 0
+        val db = dbHelper.readableDatabase
+        val cursor = db.rawQuery("SELECT COUNT(*) FROM pedido WHERE estado = 'ATENDIDO'", null)
+        if (cursor.moveToFirst()) {
+            cantidad = cursor.getInt(0)
+        }
+        cursor.close()
+        db.close()
+        return cantidad
+    }
+
+    // Obtener directorio de usuarios/clientes con el conteo de sus pedidos (HU-12, CA3)
+    fun obtenerClientesConPedidos(): List<ClienteItem> {
+        val lista = mutableListOf<ClienteItem>()
+        val db = dbHelper.readableDatabase
+        val query = """
+            SELECT u.id, u.usuario, u.telefono, COUNT(p.id) AS total_pedidos
+            FROM usuario u
+            LEFT JOIN pedido p ON u.id = p.id_usuario
+            GROUP BY u.id, u.usuario, u.telefono
+        """.trimIndent()
+
+        val cursor = db.rawQuery(query, null)
+        if (cursor.moveToFirst()) {
+            do {
+                val id = cursor.getInt(cursor.getColumnIndexOrThrow("id"))
+                val nombre = cursor.getString(cursor.getColumnIndexOrThrow("usuario"))
+                val telefono = cursor.getString(cursor.getColumnIndexOrThrow("telefono")) ?: "987654321"
+                val totalPedidos = cursor.getInt(cursor.getColumnIndexOrThrow("total_pedidos"))
+
+                lista.add(ClienteItem(id, nombre, telefono, totalPedidos))
+            } while (cursor.moveToNext())
+        }
+        cursor.close()
+        db.close()
+        return lista
+    }
+}
+package com.senati.modaapp
+
+import android.os.Bundle
+import android.widget.Toast
+import androidx.appcompat.app.AlertDialog
+import androidx.appcompat.app.AppCompatActivity
+import androidx.recyclerview.widget.LinearLayoutManager
+import com.senati.modaapp.databinding.ActivityPedidosBinding
+
+class PedidosActivity : AppCompatActivity() {
+
+    private lateinit var binding: ActivityPedidosBinding
+    private lateinit var pedidoDao: PedidoDao
+    private lateinit var adapter: PedidosAdapter
+    private var estadoActual = "PENDIENTE"
+
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+
+        binding = ActivityPedidosBinding.inflate(layoutInflater)
+        setContentView(binding.root)
+
+        pedidoDao = PedidoDao(this)
+
+        configurarRecyclerView()
+        configurarFiltros()
+    }
+
+    override fun onResume() {
+        super.onResume()
+        cargarPedidos(estadoActual)
+    }
+
+    private fun configurarRecyclerView() {
+        binding.rvPedidos.layoutManager = LinearLayoutManager(this)
+
+        adapter = PedidosAdapter(
+            listaPedidos = emptyList(),
+            onAtenderClick = { pedido ->
+                confirmarAtencion(pedido)
+            }
+        )
+        binding.rvPedidos.adapter = adapter
+    }
+
+    private fun configurarFiltros() {
+        binding.btnFiltroPendientes.setOnClickListener {
+            estadoActual = "PENDIENTE"
+            actualizarEstiloBotones(esPendiente = true)
+            cargarPedidos(estadoActual)
+        }
+
+        binding.btnFiltroAtendidos.setOnClickListener {
+            estadoActual = "ATENDIDO"
+            actualizarEstiloBotones(esPendiente = false)
+            cargarPedidos(estadoActual)
+        }
+    }
+
+    private fun actualizarEstiloBotones(esPendiente: Boolean) {
+        if (esPendiente) {
+            binding.btnFiltroPendientes.setBackgroundColor(getColor(R.color.rosa_moda))
+            binding.btnFiltroPendientes.setTextColor(getColor(R.color.white))
+
+            binding.btnFiltroAtendidos.setBackgroundColor(getColor(android.R.color.transparent))
+            binding.btnFiltroAtendidos.setTextColor(getColor(R.color.rosa_moda))
+        } else {
+            binding.btnFiltroAtendidos.setBackgroundColor(getColor(R.color.rosa_moda))
+            binding.btnFiltroAtendidos.setTextColor(getColor(R.color.white))
+
+            binding.btnFiltroPendientes.setBackgroundColor(getColor(android.R.color.transparent))
+            binding.btnFiltroPendientes.setTextColor(getColor(R.color.rosa_moda))
+        }
+    }
+
+    private fun cargarPedidos(estado: String) {
+        val lista = pedidoDao.listarPorEstado(estado)
+        adapter.actualizarLista(lista)
+    }
+
+    private fun confirmarAtencion(pedido: PedidoItem) {
+        AlertDialog.Builder(this)
+            .setTitle("Atender pedido")
+            .setMessage("Â¿Deseas marcar el Pedido #${pedido.id} como ATENDIDO y descontar el stock de prendas?")
+            .setPositiveButton("SÃ­, atender") { _, _ ->
+                val exito = pedidoDao.atenderPedido(pedido.id)
+                if (exito) {
+                    Toast.makeText(this, "Pedido #${pedido.id} atendido correctamente", Toast.LENGTH_SHORT).show()
+                    cargarPedidos(estadoActual)
+                } else {
+                    Toast.makeText(this, "Error o stock insuficiente para atender el pedido", Toast.LENGTH_LONG).show()
+                }
+            }
+            .setNegativeButton("Cancelar", null)
+            .show()
+    }
+}
+package com.senati.modaapp
+
+import android.view.LayoutInflater
+import android.view.View
+import android.view.ViewGroup
+import androidx.recyclerview.widget.RecyclerView
+import com.senati.modaapp.databinding.ItemPedidoBinding
+
+class PedidosAdapter(
+    private var listaPedidos: List<PedidoItem>,
+    private val onAtenderClick: (PedidoItem) -> Unit
+) : RecyclerView.Adapter<PedidosAdapter.PedidosViewHolder>() {
+
+    inner class PedidosViewHolder(val binding: ItemPedidoBinding) :
+        RecyclerView.ViewHolder(binding.root)
+
+    override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): PedidosViewHolder {
+        val binding = ItemPedidoBinding.inflate(
+            LayoutInflater.from(parent.context),
+            parent,
+            false
+        )
+        return PedidosViewHolder(binding)
+    }
+
+    override fun onBindViewHolder(holder: PedidosViewHolder, position: Int) {
+        val pedido = listaPedidos[position]
+        val binding = holder.binding
+
+        binding.tvNumPedido.text = "Pedido #${pedido.id}"
+        binding.tvFechaPedido.text = "Fecha: ${pedido.fecha}"
+        binding.tvTotalPedido.text = String.format("Total: S/ %.2f", pedido.total)
+        binding.tvEstadoPedido.text = pedido.estado
+
+        if (pedido.estado == "ATENDIDO") {
+            binding.btnAtenderPedido.visibility = View.GONE
+            binding.tvEstadoPedido.setTextColor(android.graphics.Color.parseColor("#2E7D32"))
+            binding.tvEstadoPedido.setBackgroundColor(android.graphics.Color.parseColor("#E8F5E9"))
+        } else {
+            binding.btnAtenderPedido.visibility = View.VISIBLE
+            binding.tvEstadoPedido.setTextColor(android.graphics.Color.parseColor("#C2185B"))
+            binding.tvEstadoPedido.setBackgroundColor(android.graphics.Color.parseColor("#FCE4EC"))
+        }
+
+        binding.btnAtenderPedido.setOnClickListener {
+            onAtenderClick(pedido)
+        }
+    }
+
+    override fun getItemCount(): Int = listaPedidos.size
+
+    fun actualizarLista(nuevaLista: List<PedidoItem>) {
+        listaPedidos = nuevaLista
+        notifyDataSetChanged()
+    }
 }
 package com.senati.modaapp
 
@@ -698,13 +1153,12 @@ class RegistrarRopaActivity : AppCompatActivity() {
     private lateinit var ropaDao: RopaDao
     private var listaCategorias: List<Categoria> = emptyList()
     private var fotoUriSeleccionada: String = ""
+    private var idRopaEditar: Int = -1
 
-    // Launcher para abrir la galerÃ­a del dispositivo (HU-05)
     private val seleccionarFotoLauncher = registerForActivityResult(
         ActivityResultContracts.GetContent()
     ) { uri: Uri? ->
         if (uri != null) {
-            // Intentar persistir permisos de lectura para la URI seleccionada
             try {
                 contentResolver.takePersistableUriPermission(
                     uri,
@@ -726,21 +1180,25 @@ class RegistrarRopaActivity : AppCompatActivity() {
 
         ropaDao = RopaDao(this)
 
+        // Capturar si viene un ID para modo ediciÃ³n (HU-07)
+        idRopaEditar = intent.getIntExtra("EXTRA_ROPA_ID", -1)
+
         configurarSpinners()
 
-        // Seleccionar foto de la galerÃ­a
+        if (idRopaEditar != -1) {
+            cargarDatosEdicion()
+        }
+
         binding.btnSeleccionarFoto.setOnClickListener {
             seleccionarFotoLauncher.launch("image/*")
         }
 
-        // Guardar la prenda
         binding.btnGuardarRopa.setOnClickListener {
-            guardarPrenda()
+            guardarOActualizarPrenda()
         }
     }
 
     private fun configurarSpinners() {
-        // Cargar CategorÃ­as desde SQLite (HU-05)
         listaCategorias = ropaDao.listarCategorias()
         val nombresCategorias = listaCategorias.map { it.nombre }
         val adapterCategoria = ArrayAdapter(
@@ -750,7 +1208,6 @@ class RegistrarRopaActivity : AppCompatActivity() {
         )
         binding.spCategoria.adapter = adapterCategoria
 
-        // Cargar Tallas predefinidas
         val tallas = listOf("S", "M", "L", "XL", "28", "30", "32", "34", "36", "38", "40", "ESTÃNDAR")
         val adapterTalla = ArrayAdapter(
             this,
@@ -760,7 +1217,38 @@ class RegistrarRopaActivity : AppCompatActivity() {
         binding.spTalla.adapter = adapterTalla
     }
 
-    private fun guardarPrenda() {
+    private fun cargarDatosEdicion() {
+        val ropa = ropaDao.obtenerPorId(idRopaEditar) ?: return
+
+        binding.tvTituloRegistrar.text = "Editar prenda"
+        binding.btnGuardarRopa.text = "Actualizar"
+
+        binding.etModelo.setText(ropa.modelo)
+        binding.etMarca.setText(ropa.marca)
+        binding.etColor.setText(ropa.color)
+        binding.etCantidad.setText(ropa.cantidad.toString())
+        binding.etPrecio.setText(ropa.precio.toString())
+
+        fotoUriSeleccionada = ropa.foto
+        if (ropa.foto.isNotEmpty()) {
+            try {
+                binding.ivFotoPrenda.setImageURI(Uri.parse(ropa.foto))
+            } catch (e: Exception) {
+                binding.ivFotoPrenda.setImageResource(android.R.drawable.ic_menu_gallery)
+            }
+        }
+
+        // Posicionar spinner categorÃ­a
+        val posCat = listaCategorias.indexOfFirst { it.id == ropa.idCategoria }
+        if (posCat != -1) binding.spCategoria.setSelection(posCat)
+
+        // Posicionar spinner talla
+        val tallas = listOf("S", "M", "L", "XL", "28", "30", "32", "34", "36", "38", "40", "ESTÃNDAR")
+        val posTalla = tallas.indexOf(ropa.talla)
+        if (posTalla != -1) binding.spTalla.setSelection(posTalla)
+    }
+
+    private fun guardarOActualizarPrenda() {
         val modelo = binding.etModelo.text.toString().trim()
         val marca = binding.etMarca.text.toString().trim()
         val color = binding.etColor.text.toString().trim()
@@ -776,7 +1264,7 @@ class RegistrarRopaActivity : AppCompatActivity() {
         val precio = precioStr.toDoubleOrNull() ?: 0.0
 
         if (precio <= 0) {
-            binding.etPrecio.error = "Ingresa un precio vÃ¡lido mayores a S/ 0"
+            binding.etPrecio.error = "Ingresa un precio vÃ¡lido mayor a S/ 0"
             return
         }
 
@@ -784,7 +1272,8 @@ class RegistrarRopaActivity : AppCompatActivity() {
         val idCategoria = if (listaCategorias.isNotEmpty()) listaCategorias[posicionCat].id else 1
         val tallaSeleccionada = binding.spTalla.selectedItem.toString()
 
-        val nuevaRopa = Ropa(
+        val ropaObjeto = Ropa(
+            id = if (idRopaEditar != -1) idRopaEditar else 0,
             modelo = modelo,
             idCategoria = idCategoria,
             talla = tallaSeleccionada,
@@ -795,14 +1284,75 @@ class RegistrarRopaActivity : AppCompatActivity() {
             foto = fotoUriSeleccionada
         )
 
-        val insertado = ropaDao.insertar(nuevaRopa)
+        val exito = if (idRopaEditar != -1) {
+            ropaDao.actualizar(ropaObjeto)
+        } else {
+            ropaDao.insertar(ropaObjeto)
+        }
 
-        if (insertado) {
-            Toast.makeText(this, "Prenda registrada correctamente", Toast.LENGTH_SHORT).show()
+        if (exito) {
+            val msj = if (idRopaEditar != -1) "Prenda actualizada correctamente" else "Prenda registrada correctamente"
+            Toast.makeText(this, msj, Toast.LENGTH_SHORT).show()
             finish()
         } else {
-            Toast.makeText(this, "Error al registrar la prenda", Toast.LENGTH_SHORT).show()
+            Toast.makeText(this, "Error al procesar la prenda", Toast.LENGTH_SHORT).show()
         }
+    }
+}
+package com.senati.modaapp
+
+import android.os.Bundle
+import androidx.appcompat.app.AppCompatActivity
+import androidx.recyclerview.widget.LinearLayoutManager
+import com.senati.modaapp.databinding.ActivityReportesBinding
+
+class ReportesActivity : AppCompatActivity() {
+
+    private lateinit var binding: ActivityReportesBinding
+    private lateinit var pedidoDao: PedidoDao
+    private lateinit var ropaDao: RopaDao
+    private lateinit var adapter: GestionRopaAdapter
+
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+
+        binding = ActivityReportesBinding.inflate(layoutInflater)
+        setContentView(binding.root)
+
+        pedidoDao = PedidoDao(this)
+        ropaDao = RopaDao(this)
+
+        configurarRecyclerView()
+        cargarMetricas()
+    }
+
+    override fun onResume() {
+        super.onResume()
+        cargarMetricas()
+    }
+
+    private fun configurarRecyclerView() {
+        binding.rvStockCritico.layoutManager = LinearLayoutManager(this)
+
+        adapter = GestionRopaAdapter(
+            listaRopa = emptyList(),
+            onEditarClick = {},
+            onEliminarClick = {}
+        )
+        binding.rvStockCritico.adapter = adapter
+    }
+
+    private fun cargarMetricas() {
+        // 1. Cargar monto acumulado y cantidad de pedidos atendidos (HU-12)
+        val totalVentas = pedidoDao.obtenerTotalVentasAtendidas()
+        val cantidadPedidos = pedidoDao.obtenerCantidadPedidosAtendidos()
+
+        binding.tvMontoTotalVentas.text = String.format("S/ %.2f", totalVentas)
+        binding.tvCantidadPedidosAtendidos.text = "$cantidadPedidos pedidos"
+
+        // 2. Cargar lista de prendas con stock crÃ­tico (HU-12)
+        val listaCritica = ropaDao.listarStockCritico()
+        adapter.actualizarLista(listaCritica)
     }
 }
 package com.senati.modaapp
@@ -952,7 +1502,6 @@ class RopaDao(context: Context) {
         return lista
     }
 
-    // Buscar ropa por modelo o marca (HU-07)
     fun buscarRopa(texto: String): List<Ropa> {
         val lista = mutableListOf<Ropa>()
         val db = dbHelper.readableDatabase
@@ -982,7 +1531,6 @@ class RopaDao(context: Context) {
         return lista
     }
 
-    // Actualizar prenda existente (HU-07)
     fun actualizar(ropa: Ropa): Boolean {
         val db = dbHelper.writableDatabase
         val values = ContentValues().apply {
@@ -1000,12 +1548,61 @@ class RopaDao(context: Context) {
         return filasAfectadas > 0
     }
 
-    // Eliminar prenda (HU-07)
     fun eliminar(id: Int): Boolean {
         val db = dbHelper.writableDatabase
         val filasAfectadas = db.delete("ropa", "id = ?", arrayOf(id.toString()))
         db.close()
         return filasAfectadas > 0
+    }
+
+    fun obtenerPorId(id: Int): Ropa? {
+        val db = dbHelper.readableDatabase
+        val cursor = db.rawQuery("SELECT * FROM ropa WHERE id = ?", arrayOf(id.toString()))
+        var ropa: Ropa? = null
+        if (cursor.moveToFirst()) {
+            ropa = Ropa(
+                id = cursor.getInt(cursor.getColumnIndexOrThrow("id")),
+                modelo = cursor.getString(cursor.getColumnIndexOrThrow("modelo")),
+                idCategoria = cursor.getInt(cursor.getColumnIndexOrThrow("id_categoria")),
+                talla = cursor.getString(cursor.getColumnIndexOrThrow("talla")),
+                marca = cursor.getString(cursor.getColumnIndexOrThrow("marca")),
+                color = cursor.getString(cursor.getColumnIndexOrThrow("color")),
+                precio = cursor.getDouble(cursor.getColumnIndexOrThrow("precio")),
+                cantidad = cursor.getInt(cursor.getColumnIndexOrThrow("cantidad")),
+                foto = cursor.getString(cursor.getColumnIndexOrThrow("foto"))
+            )
+        }
+        cursor.close()
+        db.close()
+        return ropa
+    }
+
+    // Obtener prendas con stock crÃ­tico (<= 3 unidades) (HU-12)
+    fun listarStockCritico(): List<Ropa> {
+        val lista = mutableListOf<Ropa>()
+        val db = dbHelper.readableDatabase
+        val cursor = db.rawQuery("SELECT * FROM ropa WHERE cantidad <= 3 ORDER BY cantidad ASC", null)
+
+        if (cursor.moveToFirst()) {
+            do {
+                lista.add(
+                    Ropa(
+                        id = cursor.getInt(cursor.getColumnIndexOrThrow("id")),
+                        modelo = cursor.getString(cursor.getColumnIndexOrThrow("modelo")),
+                        idCategoria = cursor.getInt(cursor.getColumnIndexOrThrow("id_categoria")),
+                        talla = cursor.getString(cursor.getColumnIndexOrThrow("talla")),
+                        marca = cursor.getString(cursor.getColumnIndexOrThrow("marca")),
+                        color = cursor.getString(cursor.getColumnIndexOrThrow("color")),
+                        precio = cursor.getDouble(cursor.getColumnIndexOrThrow("precio")),
+                        cantidad = cursor.getInt(cursor.getColumnIndexOrThrow("cantidad")),
+                        foto = cursor.getString(cursor.getColumnIndexOrThrow("foto"))
+                    )
+                )
+            } while (cursor.moveToNext())
+        }
+        cursor.close()
+        db.close()
+        return lista
     }
 }
 package com.senati.modaapp
@@ -1412,19 +2009,64 @@ class UsuarioDao(context: Context) {
     android:layout_width="match_parent"
     android:layout_height="match_parent"
     android:orientation="vertical"
-    android:background="@color/white"
+    android:background="@color/fondo_gris"
     android:padding="16dp"
-    tools:context=".GestionRopaActivity">
+    tools:context=".ClientesActivity">
 
     <!-- TÃ­tulo superior -->
     <TextView
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
-        android:text="GestiÃ³n de Inventario"
+        android:text="Directorio de Clientes"
         android:textSize="22sp"
         android:textStyle="bold"
         android:textColor="@color/black"
         android:layout_marginBottom="16dp" />
+
+    <!-- RecyclerView con la lista de clientes y cantidad de pedidos -->
+    <androidx.recyclerview.widget.RecyclerView
+        android:id="@+id/rvClientes"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent" />
+
+</LinearLayout>
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    xmlns:tools="http://schemas.android.com/tools"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:orientation="vertical"
+    android:background="@color/white"
+    android:padding="16dp"
+    tools:context=".GestionRopaActivity">
+
+    <!-- Encabezado con tÃ­tulo y botÃ³n para agregar prenda -->
+    <RelativeLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginBottom="16dp">
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_alignParentStart="true"
+            android:layout_centerVertical="true"
+            android:text="GestiÃ³n de Inventario"
+            android:textSize="20sp"
+            android:textStyle="bold"
+            android:textColor="@color/black" />
+
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/btnNuevaPrenda"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_alignParentEnd="true"
+            android:text="+ Nueva"
+            android:textSize="12sp"
+            app:backgroundTint="@color/rosa_moda"
+            app:cornerRadius="18dp" />
+    </RelativeLayout>
 
     <!-- Campo de bÃºsqueda en tiempo real (HU-07) -->
     <com.google.android.material.textfield.TextInputLayout
@@ -1861,6 +2503,66 @@ class UsuarioDao(context: Context) {
 
 </LinearLayout>
 <?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    xmlns:tools="http://schemas.android.com/tools"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:orientation="vertical"
+    android:background="@color/fondo_gris"
+    android:padding="16dp"
+    tools:context=".PedidosActivity">
+
+    <!-- TÃ­tulo superior -->
+    <TextView
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="Control de Pedidos"
+        android:textSize="22sp"
+        android:textStyle="bold"
+        android:textColor="@color/black"
+        android:layout_marginBottom="16dp" />
+
+    <!-- Botones de filtro: Pendientes / Atendidos -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:layout_marginBottom="16dp">
+
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/btnFiltroPendientes"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:layout_marginEnd="6dp"
+            android:text="Pendientes"
+            android:textSize="13sp"
+            app:backgroundTint="@color/rosa_moda"
+            app:cornerRadius="20dp" />
+
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/btnFiltroAtendidos"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:layout_marginStart="6dp"
+            android:text="Atendidos"
+            android:textSize="13sp"
+            style="@style/Widget.MaterialComponents.Button.OutlinedButton"
+            app:strokeColor="@color/rosa_moda"
+            android:textColor="@color/rosa_moda"
+            app:cornerRadius="20dp" />
+    </LinearLayout>
+
+    <!-- Lista de pedidos -->
+    <androidx.recyclerview.widget.RecyclerView
+        android:id="@+id/rvPedidos"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent" />
+
+</LinearLayout>
+<?xml version="1.0" encoding="utf-8"?>
 <ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:app="http://schemas.android.com/apk/res-auto"
     xmlns:tools="http://schemas.android.com/tools"
@@ -1878,6 +2580,7 @@ class UsuarioDao(context: Context) {
 
         <!-- TÃ­tulo superior -->
         <TextView
+            android:id="@+id/tvTituloRegistrar"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:text="Nueva prenda"
@@ -1885,7 +2588,6 @@ class UsuarioDao(context: Context) {
             android:textStyle="bold"
             android:textColor="@color/black"
             android:layout_marginBottom="16dp" />
-
         <!-- PrevisualizaciÃ³n de la foto -->
         <com.google.android.material.card.MaterialCardView
             android:layout_width="160dp"
@@ -2077,6 +2779,121 @@ class UsuarioDao(context: Context) {
     </LinearLayout>
 </ScrollView>
 <?xml version="1.0" encoding="utf-8"?>
+<ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    xmlns:tools="http://schemas.android.com/tools"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="@color/fondo_gris"
+    android:fillViewport="true"
+    tools:context=".ReportesActivity">
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="vertical"
+        android:padding="20dp">
+
+        <!-- TÃ­tulo superior -->
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="Reportes y MÃ©tricas"
+            android:textSize="22sp"
+            android:textStyle="bold"
+            android:textColor="@color/black"
+            android:layout_marginBottom="20dp" />
+
+        <!-- Tarjeta: Monto Total de Ventas Atendidas -->
+        <com.google.android.material.card.MaterialCardView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginBottom="12dp"
+            app:cardCornerRadius="16dp"
+            app:cardElevation="2dp"
+            app:cardBackgroundColor="@color/white"
+            app:strokeWidth="0dp">
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical"
+                android:padding="16dp">
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="Ventas Atendidas (Acumulado)"
+                    android:textSize="14sp"
+                    android:textColor="#757575" />
+
+                <TextView
+                    android:id="@+id/tvMontoTotalVentas"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="S/ 0.00"
+                    android:textSize="26sp"
+                    android:textStyle="bold"
+                    android:textColor="@color/rosa_moda"
+                    android:layout_marginTop="4dp" />
+            </LinearLayout>
+        </com.google.android.material.card.MaterialCardView>
+
+        <!-- Tarjeta: Cantidad de Pedidos Atendidos -->
+        <com.google.android.material.card.MaterialCardView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginBottom="20dp"
+            app:cardCornerRadius="16dp"
+            app:cardElevation="2dp"
+            app:cardBackgroundColor="@color/white"
+            app:strokeWidth="0dp">
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical"
+                android:padding="16dp">
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="Pedidos Atendidos"
+                    android:textSize="14sp"
+                    android:textColor="#757575" />
+
+                <TextView
+                    android:id="@+id/tvCantidadPedidosAtendidos"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="0 pedidos"
+                    android:textSize="22sp"
+                    android:textStyle="bold"
+                    android:textColor="@color/black"
+                    android:layout_marginTop="4dp" />
+            </LinearLayout>
+        </com.google.android.material.card.MaterialCardView>
+
+        <!-- SubtÃ­tulo Stock CrÃ­tico -->
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="Alertas de Stock CrÃ­tico (â‰¤ 3 unidades)"
+            android:textSize="16sp"
+            android:textStyle="bold"
+            android:textColor="@color/black"
+            android:layout_marginBottom="12dp" />
+
+        <!-- Lista de prendas con stock crÃ­tico -->
+        <androidx.recyclerview.widget.RecyclerView
+            android:id="@+id/rvStockCritico"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:nestedScrollingEnabled="false" />
+
+    </LinearLayout>
+</ScrollView>
+<?xml version="1.0" encoding="utf-8"?>
 <com.google.android.material.card.MaterialCardView xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:app="http://schemas.android.com/apk/res-auto"
     xmlns:tools="http://schemas.android.com/tools"
@@ -2157,6 +2974,87 @@ class UsuarioDao(context: Context) {
             android:textSize="14sp"
             android:textStyle="bold"
             android:textColor="@color/rosa_moda" />
+
+    </LinearLayout>
+</com.google.android.material.card.MaterialCardView>
+<?xml version="1.0" encoding="utf-8"?>
+<com.google.android.material.card.MaterialCardView xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:layout_marginHorizontal="16dp"
+    android:layout_marginVertical="6dp"
+    app:cardCornerRadius="14dp"
+    app:cardElevation="1dp"
+    app:cardBackgroundColor="@color/white"
+    app:strokeWidth="1dp"
+    app:strokeColor="#F0F0F0">
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:padding="16dp"
+        android:gravity="center_vertical">
+
+        <!-- Ãcono circular de cliente -->
+        <androidx.cardview.widget.CardView
+            android:layout_width="44dp"
+            android:layout_height="44dp"
+            app:cardCornerRadius="22dp"
+            app:cardElevation="0dp"
+            app:cardBackgroundColor="@color/rosa_claro">
+
+            <TextView
+                android:id="@+id/tvInicialCliente"
+                android:layout_width="match_parent"
+                android:layout_height="match_parent"
+                android:gravity="center"
+                android:text="C"
+                android:textColor="@color/rosa_moda"
+                android:textSize="18sp"
+                android:textStyle="bold" />
+        </androidx.cardview.widget.CardView>
+
+        <!-- InformaciÃ³n de Nombre y TelÃ©fono -->
+        <LinearLayout
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:orientation="vertical"
+            android:layout_marginStart="14dp">
+
+            <TextView
+                android:id="@+id/tvNombreCliente"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="Nombre del Cliente"
+                android:textSize="15sp"
+                android:textStyle="bold"
+                android:textColor="@color/black" />
+
+            <TextView
+                android:id="@+id/tvTelefonoCliente"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="TelÃ©fono: 987654321"
+                android:textSize="12sp"
+                android:textColor="#757575"
+                android:layout_marginTop="2dp" />
+        </LinearLayout>
+
+        <!-- Contador de Pedidos Realizados -->
+        <TextView
+            android:id="@+id/tvCantPedidosCliente"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="3 pedidos"
+            android:textSize="13sp"
+            android:textStyle="bold"
+            android:textColor="@color/rosa_moda"
+            android:background="#FCE4EC"
+            android:paddingHorizontal="10dp"
+            android:paddingVertical="4dp" />
 
     </LinearLayout>
 </com.google.android.material.card.MaterialCardView>
@@ -2252,6 +3150,90 @@ class UsuarioDao(context: Context) {
             android:src="@android:drawable/ic_menu_delete"
             app:tint="#D32F2F"
             android:contentDescription="Eliminar" />
+
+    </LinearLayout>
+</com.google.android.material.card.MaterialCardView>
+<?xml version="1.0" encoding="utf-8"?>
+<com.google.android.material.card.MaterialCardView xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:layout_marginHorizontal="16dp"
+    android:layout_marginVertical="6dp"
+    app:cardCornerRadius="14dp"
+    app:cardElevation="1dp"
+    app:cardBackgroundColor="@color/white"
+    app:strokeWidth="1dp"
+    app:strokeColor="#F0F0F0">
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="vertical"
+        android:padding="16dp">
+
+        <RelativeLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginBottom="8dp">
+
+            <TextView
+                android:id="@+id/tvNumPedido"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="Pedido #1"
+                android:textSize="16sp"
+                android:textStyle="bold"
+                android:textColor="@color/black" />
+
+            <TextView
+                android:id="@+id/tvEstadoPedido"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_alignParentEnd="true"
+                android:text="PENDIENTE"
+                android:textSize="12sp"
+                android:textStyle="bold"
+                android:textColor="@color/rosa_moda"
+                android:background="#FCE4EC"
+                android:paddingHorizontal="10dp"
+                android:paddingVertical="4dp" />
+        </RelativeLayout>
+
+        <TextView
+            android:id="@+id/tvFechaPedido"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="Fecha: 2026-10-05 19:20"
+            android:textSize="12sp"
+            android:textColor="#757575"
+            android:layout_marginBottom="8dp" />
+
+        <RelativeLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="4dp">
+
+            <TextView
+                android:id="@+id/tvTotalPedido"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_centerVertical="true"
+                android:text="Total: S/ 45.00"
+                android:textSize="15sp"
+                android:textStyle="bold"
+                android:textColor="@color/black" />
+
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/btnAtenderPedido"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_alignParentEnd="true"
+                android:text="Atender"
+                android:textSize="12sp"
+                app:backgroundTint="@color/rosa_moda"
+                app:cornerRadius="18dp" />
+        </RelativeLayout>
 
     </LinearLayout>
 </com.google.android.material.card.MaterialCardView>
@@ -2496,9 +3478,33 @@ class UsuarioDao(context: Context) {
             android:exported="false"
             android:windowSoftInputMode="adjustResize" />
 
+        <!-- GestiÃ³n e Inventario de Ropa (HU-07) -->
+        <activity
+            android:name=".GestionRopaActivity"
+            android:exported="false"
+            android:windowSoftInputMode="adjustResize" />
+
         <!-- Formulario para Registrar Ropa -->
         <activity
             android:name=".RegistrarRopaActivity"
+            android:exported="false"
+            android:windowSoftInputMode="adjustResize" />
+
+        <!-- Control de Pedidos (HU-11) -->
+        <activity
+            android:name=".PedidosActivity"
+            android:exported="false"
+            android:windowSoftInputMode="adjustResize" />
+
+        <!-- Reportes y MÃ©tricas (HU-12) -->
+        <activity
+            android:name=".ReportesActivity"
+            android:exported="false"
+            android:windowSoftInputMode="adjustResize" />
+
+        <!-- Directorio de Clientes (HU-12) -->
+        <activity
+            android:name=".ClientesActivity"
             android:exported="false"
             android:windowSoftInputMode="adjustResize" />
 
