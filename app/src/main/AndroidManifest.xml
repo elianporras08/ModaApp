@@ -41,6 +41,24 @@
             android:exported="false"
             android:windowSoftInputMode="adjustResize" />
 
+        <!-- Control de Pedidos (HU-11) -->
+        <activity
+            android:name=".PedidosActivity"
+            android:exported="false"
+            android:windowSoftInputMode="adjustResize" />
+
+        <!-- Reportes y Métricas (HU-12) -->
+        <activity
+            android:name=".ReportesActivity"
+            android:exported="false"
+            android:windowSoftInputMode="adjustResize" />
+
+        <!-- Directorio de Clientes (HU-12) -->
+        <activity
+            android:name=".ClientesActivity"
+            android:exported="false"
+            android:windowSoftInputMode="adjustResize" />
+
         <!-- Catálogo del Cliente -->
         <activity
             android:name=".CatalogoActivity"

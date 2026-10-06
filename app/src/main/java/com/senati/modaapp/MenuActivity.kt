@@ -1,5 +1,6 @@
 package com.senati.modaapp
 
+import android.content.Context
 import android.content.Intent
 import android.os.Bundle
 import androidx.appcompat.app.AppCompatActivity
@@ -18,18 +19,31 @@ class MenuActivity : AppCompatActivity() {
         val usuario = intent.getStringExtra("EXTRA_USUARIO") ?: "admin"
         binding.tvBienvenida.text = "Hola, $usuario"
 
-        // Abrir la gestión e inventario de ropa (HU-07)
         binding.cardRopa.setOnClickListener {
             val intent = Intent(this, GestionRopaActivity::class.java)
             startActivity(intent)
         }
 
-        binding.cardPedidos.setOnClickListener { }
-        binding.cardClientes.setOnClickListener { }
-        binding.cardReportes.setOnClickListener { }
+        binding.cardPedidos.setOnClickListener {
+            val intent = Intent(this, PedidosActivity::class.java)
+            startActivity(intent)
+        }
 
-        // Botón Salir (HU-02, CA3)
+        binding.cardClientes.setOnClickListener {
+            val intent = Intent(this, ClientesActivity::class.java)
+            startActivity(intent)
+        }
+
+        binding.cardReportes.setOnClickListener {
+            val intent = Intent(this, ReportesActivity::class.java)
+            startActivity(intent)
+        }
+
+        // Botón Salir: Limpiar sesión guardada (HU-13)
         binding.btnSalir.setOnClickListener {
+            val prefs = getSharedPreferences("SesionModaApp", Context.MODE_PRIVATE)
+            prefs.edit().clear().apply()
+
             val intent = Intent(this, MainActivity::class.java)
             startActivity(intent)
             finish()
